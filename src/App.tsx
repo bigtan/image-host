@@ -344,66 +344,69 @@ export default function App() {
           </article>
         ) : null}
 
-        {items.map((item) => (
-          <article key={item.id} className="upload-card">
-            <img src={item.previewUrl} alt={item.file.name} className="preview-image" />
+        {items.map((item) => {
+          const result = item.result;
 
-            <div className="upload-meta">
-              <div>
-                <h3>{item.file.name || "clipboard-image.png"}</h3>
-                <p>
-                  {item.file.type || "unknown"} · {formatBytes(item.file.size)}
-                </p>
+          return (
+            <article key={item.id} className="upload-card">
+              <img src={item.previewUrl} alt={item.file.name} className="preview-image" />
+
+              <div className="upload-meta">
+                <div>
+                  <h3>{item.file.name || "clipboard-image.png"}</h3>
+                  <p>
+                    {item.file.type || "unknown"} · {formatBytes(item.file.size)}
+                  </p>
+                </div>
+
+                <span className={`status-chip status-${item.status}`}>{item.status}</span>
               </div>
 
-              <span className={`status-chip status-${item.status}`}>{item.status}</span>
-            </div>
-
-            <div className="progress-bar">
-              <div style={{ width: `${item.progress}%` }} />
-            </div>
-
-            {item.error ? <p className="error-text">{item.error}</p> : null}
-
-            {item.result ? (
-              <div className="result-grid">
-                <label className="result-field">
-                  <span>原始链接</span>
-                  <textarea readOnly value={item.result.originalUrl} />
-                  <button type="button" onClick={() => void copyText(item.result.originalUrl)}>
-                    复制链接
-                  </button>
-                </label>
-
-                <label className="result-field">
-                  <span>HTML</span>
-                  <textarea readOnly value={item.result.html} />
-                  <button type="button" onClick={() => void copyText(item.result.html)}>
-                    复制 HTML
-                  </button>
-                </label>
-
-                <label className="result-field">
-                  <span>Markdown</span>
-                  <textarea readOnly value={item.result.markdown} />
-                  <button type="button" onClick={() => void copyText(item.result.markdown)}>
-                    复制 Markdown
-                  </button>
-                </label>
-
-                <label className="result-field">
-                  <span>BBCode</span>
-                  <textarea readOnly value={item.result.bbcode} />
-                  <button type="button" onClick={() => void copyText(item.result.bbcode)}>
-                    复制 BBCode
-                  </button>
-                </label>
+              <div className="progress-bar">
+                <div style={{ width: `${item.progress}%` }} />
               </div>
-            ) : null}
-          </article>
-        ))}
+
+              {item.error ? <p className="error-text">{item.error}</p> : null}
+
+              {result ? (
+                <div className="result-grid">
+                  <label className="result-field">
+                    <span>原始链接</span>
+                    <textarea readOnly value={result.originalUrl} />
+                    <button type="button" onClick={() => void copyText(result.originalUrl)}>
+                      复制链接
+                    </button>
+                  </label>
+
+                  <label className="result-field">
+                    <span>HTML</span>
+                    <textarea readOnly value={result.html} />
+                    <button type="button" onClick={() => void copyText(result.html)}>
+                      复制 HTML
+                    </button>
+                  </label>
+
+                  <label className="result-field">
+                    <span>Markdown</span>
+                    <textarea readOnly value={result.markdown} />
+                    <button type="button" onClick={() => void copyText(result.markdown)}>
+                      复制 Markdown
+                    </button>
+                  </label>
+
+                  <label className="result-field">
+                    <span>BBCode</span>
+                    <textarea readOnly value={result.bbcode} />
+                    <button type="button" onClick={() => void copyText(result.bbcode)}>
+                      复制 BBCode
+                    </button>
+                  </label>
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
       </section>
     </main>
   );
 }
-
