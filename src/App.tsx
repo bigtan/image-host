@@ -107,6 +107,8 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previousItemsRef = useRef<UploadItem[]>([]);
+  const tokenRef = useRef("");
+  const pathPrefixRef = useRef("");
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
@@ -117,6 +119,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    tokenRef.current = token;
+
     if (token) {
       window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
     } else {
@@ -125,6 +129,8 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
+    pathPrefixRef.current = pathPrefix;
+
     if (pathPrefix) {
       window.localStorage.setItem(PREFIX_STORAGE_KEY, pathPrefix);
     } else {
@@ -132,65 +138,9 @@ export default function App() {
     }
   }, [pathPrefix]);
 
-  useEffect(() => {
-    const handlePaste = (event: ClipboardEvent) => {
-      const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
-        file.type.startsWith("image/")
-      );
-
-      if (!files.length) return;
-      event.preventDefault();
-      void enqueueFiles(files);
-    };
-
-    window.addEventListener("paste", handlePaste);
-    return () => window.removeEventListener("paste", handlePaste);
-  }, []);
-
-  useEffect(() => {
-    const previousItems = previousItemsRef.current;
-    const activeIds = new Set(items.map((item) => item.id));
-
-    previousItems
-      .filter((item) => !activeIds.has(item.id))
-      .forEach((item) => URL.revokeObjectURL(item.previewUrl));
-
-    previousItemsRef.current = items;
-  }, [items]);
-
-  useEffect(() => {
-    return () => {
-      previousItemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-    };
-  }, []);
-
-  const completedCount = useMemo(
-    () => items.filter((item) => item.status === "done").length,
-    [items]
-  );
-
-  async function enqueueFiles(files: File[]) {
-    const candidates = files.filter((file) => file.type.startsWith("image/"));
-    if (!candidates.length) return;
-
-    const nextItems = candidates.map<UploadItem>((file) => ({
-      id: crypto.randomUUID(),
-      file,
-      previewUrl: URL.createObjectURL(file),
-      progress: 0,
-      status: "queued"
-    }));
-
-    setItems((current) => [...nextItems, ...current]);
-
-    for (const item of nextItems) {
-      await uploadItem(item.id, item.file);
-    }
-  }
-
   async function uploadItem(id: string, file: File) {
-    const activeToken = token.trim();
-    const activePrefix = pathPrefix.trim();
+    const activeToken = tokenRef.current.trim();
+    const activePrefix = pathPrefixRef.current.trim();
 
     if (!activeToken) {
       setItems((current) =>
@@ -241,6 +191,62 @@ export default function App() {
       );
     }
   }
+
+  async function enqueueFiles(files: File[]) {
+    const candidates = files.filter((file) => file.type.startsWith("image/"));
+    if (!candidates.length) return;
+
+    const nextItems = candidates.map<UploadItem>((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+      progress: 0,
+      status: "queued"
+    }));
+
+    setItems((current) => [...nextItems, ...current]);
+
+    for (const item of nextItems) {
+      await uploadItem(item.id, item.file);
+    }
+  }
+
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+        file.type.startsWith("image/")
+      );
+
+      if (!files.length) return;
+      event.preventDefault();
+      void enqueueFiles(files);
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, []);
+
+  useEffect(() => {
+    const previousItems = previousItemsRef.current;
+    const activeIds = new Set(items.map((item) => item.id));
+
+    previousItems
+      .filter((item) => !activeIds.has(item.id))
+      .forEach((item) => URL.revokeObjectURL(item.previewUrl));
+
+    previousItemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    return () => {
+      previousItemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+    };
+  }, []);
+
+  const completedCount = useMemo(
+    () => items.filter((item) => item.status === "done").length,
+    [items]
+  );
 
   function handleFileSelection(files: FileList | null) {
     if (!files?.length) return;
