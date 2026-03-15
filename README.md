@@ -82,15 +82,15 @@ pnpm dev
 
 工作流文件位于 [`.github/workflows/deploy.yml`](/D:/WorkPlace/Web/image-host/.github/workflows/deploy.yml)。
 
-需要在 GitHub 仓库 Secrets 中配置：
+当前仓库如果已经在 EdgeOne Pages 中绑定为 `GitHub` Provider，就不要再通过 CLI 上传 `dist`。  
+这类项目会由 EdgeOne 在收到 Git 推送后自动拉取仓库并构建部署。
 
-- `EDGEONE_API_TOKEN`
-
-这个工作流会：
+因此当前工作流的职责是构建校验，它会：
 
 1. 使用 `pnpm` 安装依赖并构建前端
-2. 把 `package.json` 和 `node-functions` 复制进 `dist`
-3. 通过 EdgeOne CLI 把 `dist` 作为完整站点部署
+2. 在 `push` 和 `pull_request` 时验证项目可以成功构建
+
+如果你想走 GitHub Actions 直接上传部署，必须在 EdgeOne 新建一个 `Upload` 类型项目，而不是复用当前的 GitHub 集成项目。
 
 ## 上传流程
 
