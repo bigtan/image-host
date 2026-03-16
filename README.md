@@ -35,7 +35,7 @@ pnpm dev
 
 ## 环境变量
 
-复制 [`.env.example`](/D:/WorkPlace/Web/image-host/.env.example) 到 `.env.local` 或在 EdgeOne Pages 后台配置：
+复制 [`.env.example`](./.env.example) 到 `.env.local` 或在 EdgeOne Pages 后台配置：
 
 - `UPLOAD_TOKEN`
   前端输入的上传令牌。适合个人单用户场景。
@@ -69,7 +69,7 @@ pnpm dev
 推荐结构：
 
 - 静态前端：Vite 构建输出
-- 函数目录：[`node-functions/api/sign-upload.js`](/D:/WorkPlace/Web/image-host/node-functions/api/sign-upload.js)
+- 函数目录：[`node-functions/api/sign-upload.js`](./node-functions/api/sign-upload.js)
 
 部署时确认：
 
@@ -80,7 +80,7 @@ pnpm dev
 
 ### GitHub Actions 自动部署
 
-工作流文件位于 [`.github/workflows/deploy.yml`](/D:/WorkPlace/Web/image-host/.github/workflows/deploy.yml)。
+工作流文件位于 [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml)。
 
 当前仓库如果已经在 EdgeOne Pages 中绑定为 `GitHub` Provider，就不要再通过 CLI 上传 `dist`。  
 这类项目会由 EdgeOne 在收到 Git 推送后自动拉取仓库并构建部署。
