@@ -1,5 +1,13 @@
 import COS from "cos-nodejs-sdk-v5";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+
+const ALLOWED_MIME_TYPES = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/avif": "avif"
+};
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -15,25 +23,41 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function safeCompare(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) {
+    return false;
+  }
+
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
 function getEnv(name, fallback = "") {
   const value = process.env[name] ?? fallback;
   return typeof value === "string" ? value.trim() : fallback;
 }
 
-function inferExtension(fileName, contentType) {
-  const fromName = fileName.split(".").pop()?.toLowerCase();
-  const safeFromName = fromName && /^[a-z0-9]+$/.test(fromName) ? fromName : "";
-  if (safeFromName) return safeFromName;
+function inferExtension(contentType) {
+  return ALLOWED_MIME_TYPES[contentType] ?? "";
+}
 
-  const mapping = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/webp": "webp",
-    "image/gif": "gif",
-    "image/avif": "avif"
-  };
+function sanitizeDownloadFileName(fileName, extension) {
+  const normalized = String(fileName ?? "")
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001F\u007F]+/g, "")
+    .replace(/[\\/]/g, "-")
+    .replace(/[";]+/g, "")
+    .trim();
 
-  return mapping[contentType] ?? "bin";
+  if (!normalized) {
+    return `image.${extension}`;
+  }
+
+  const maxLength = 120;
+  return normalized.slice(0, maxLength);
+}
+
+function buildContentDisposition(fileName) {
+  return `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
 function normalizePrefix(prefix) {
@@ -49,10 +73,9 @@ function createObjectKey(prefix, extension) {
   const now = new Date();
   const datePath = [
     now.getUTCFullYear(),
-    String(now.getUTCMonth() + 1).padStart(2, "0"),
-    String(now.getUTCDate()).padStart(2, "0")
+    String(now.getUTCMonth() + 1).padStart(2, "0")
   ].join("/");
-  const fileId = `${now.getTime()}-${randomBytes(4).toString("hex")}.${extension}`;
+  const fileId = `${randomBytes(6).toString("base64url")}.${extension}`;
   return prefix ? `${prefix}/${datePath}/${fileId}` : `${datePath}/${fileId}`;
 }
 
@@ -74,8 +97,8 @@ function verifyUploadToken(token) {
   }
 
   if (!token) return false;
-  if (rawToken && token === rawToken) return true;
-  if (hashedToken && sha256(token) === hashedToken) return true;
+  if (rawToken && safeCompare(token, rawToken)) return true;
+  if (hashedToken && safeCompare(sha256(token), hashedToken)) return true;
   return false;
 }
 
@@ -127,11 +150,11 @@ export async function onRequestPost(context) {
 
     const contentType = String(body.contentType ?? "").trim().toLowerCase();
     const fileSize = Number(body.fileSize ?? 0);
-    const fileName = String(body.fileName ?? "clipboard-image").trim();
+    const fileName = String(body.fileName ?? "").trim();
     const pathPrefix = normalizePrefix(String(body.pathPrefix ?? getEnv("DEFAULT_PATH_PREFIX")));
 
-    if (!contentType.startsWith("image/")) {
-      return json({ error: "仅允许上传图片类型文件" }, 400);
+    if (!ALLOWED_MIME_TYPES[contentType]) {
+      return json({ error: "不支持的图片类型" }, 400);
     }
 
     const maxUploadSize = Number(getEnv("MAX_UPLOAD_SIZE_BYTES", `${10 * 1024 * 1024}`));
@@ -150,12 +173,19 @@ export async function onRequestPost(context) {
       return json({ error: "服务端缺少 COS 配置" }, 500);
     }
 
-    const extension = inferExtension(fileName, contentType);
+    const extension = inferExtension(contentType);
     const objectKey = createObjectKey(pathPrefix, extension);
+    const downloadFileName = sanitizeDownloadFileName(fileName, extension);
     const cos = new COS({
       SecretId: secretId,
       SecretKey: secretKey
     });
+
+    const signedHeaders = {
+      "Content-Type": contentType,
+      "Content-Length": String(fileSize),
+      "Content-Disposition": buildContentDisposition(downloadFileName)
+    };
 
     const uploadUrl = await getSignedUploadUrl(cos, {
       Bucket: bucket,
@@ -165,9 +195,7 @@ export async function onRequestPost(context) {
       Sign: true,
       Expires: uploadExpires,
       Query: {},
-      Headers: {
-        "Content-Type": contentType
-      }
+      Headers: signedHeaders
     });
 
     return json({
@@ -175,9 +203,7 @@ export async function onRequestPost(context) {
       publicUrl: buildPublicUrl(publicBaseUrl, bucket, region, objectKey),
       objectKey,
       expiresAt: new Date(Date.now() + uploadExpires * 1000).toISOString(),
-      headers: {
-        "Content-Type": contentType
-      }
+      headers: signedHeaders
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "签名接口异常";
