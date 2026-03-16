@@ -51,16 +51,39 @@ pnpm dev
   默认对象前缀，例如 `forum`。
 - `MAX_UPLOAD_SIZE_BYTES`
 - `SIGNED_URL_EXPIRES_SECONDS`
+- `CORS_ALLOWED_ORIGINS`
+  Node Function 签名接口允许访问的来源列表，使用半角逗号分隔，例如 `http://localhost:3000,https://img.example.com`。
 
 `UPLOAD_TOKEN` 和 `UPLOAD_TOKEN_SHA256` 二选一即可。
 
-## COS 配置
+## CORS 配置
 
-需要给 COS Bucket 配置浏览器直传的 CORS 规则，至少允许：
+这个项目有两处 CORS，需要分别配置：
 
-- 来源：你的 EdgeOne Pages 域名
+### 1. Node Function 签名接口 CORS
+
+`/api/sign-upload` 会从 `CORS_ALLOWED_ORIGINS` 读取允许来源。
+
+- 本地开发可以设置为 `http://localhost:3000`
+- 线上部署应设置为你的前端正式域名
+- 多个来源使用半角逗号分隔
+- 如果请求带有 `Origin`，但不在白名单中，接口会直接返回 `403`
+
+示例：
+
+```env
+CORS_ALLOWED_ORIGINS=http://localhost:3000,https://img.example.com
+```
+
+### 2. COS Bucket 直传 CORS
+
+浏览器拿到预签名 URL 后，上传目标已经变成 COS，因此 COS Bucket 也必须允许你的前端来源发起直传请求。
+
+至少允许：
+
+- 来源：你的前端域名
 - 方法：`PUT`, `GET`, `HEAD`
-- 允许头：`Content-Type`
+- 允许头：`Content-Type`, `Content-Length`, `Content-Disposition`
 
 如果 `COS_PUBLIC_BASE_URL` 为空，前端会回显 COS 默认访问地址。
 
@@ -77,6 +100,7 @@ pnpm dev
 2. 输出目录使用 `dist`
 3. 环境变量在 EdgeOne Pages 后台配置
 4. `node-functions` 目录一并上传
+5. `CORS_ALLOWED_ORIGINS` 已包含你的正式前端域名
 
 ### GitHub Actions 自动部署
 
@@ -96,7 +120,7 @@ pnpm dev
 
 1. 前端读取文件或粘贴截图
 2. 调用 `/api/sign-upload`
-3. Node Function 校验 `x-upload-token`
+3. Node Function 校验 `Origin` 和 `x-upload-token`
 4. 函数使用 COS 密钥为单个对象生成短期 PUT URL
 5. 浏览器直接 PUT 到 COS
 6. 前端展示嵌入代码

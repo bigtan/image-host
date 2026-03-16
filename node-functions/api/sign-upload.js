@@ -9,12 +9,13 @@ const ALLOWED_MIME_TYPES = {
   "image/avif": "avif"
 };
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": "no-store",
+      ...extraHeaders
     }
   });
 }
@@ -88,6 +89,39 @@ function buildPublicUrl(baseUrl, bucket, region, objectKey) {
   return `https://${bucket}.cos.${region}.myqcloud.com/${objectKey}`;
 }
 
+function getAllowedOrigins() {
+  return getEnv("CORS_ALLOWED_ORIGINS")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function getCorsHeaders(request) {
+  const origin = request.headers.get("origin")?.trim() ?? "";
+  if (!origin) {
+    return { ok: true, headers: {} };
+  }
+
+  const allowedOrigins = getAllowedOrigins();
+  if (!allowedOrigins.length) {
+    return { ok: false, headers: {} };
+  }
+
+  if (!allowedOrigins.includes(origin)) {
+    return { ok: false, headers: {} };
+  }
+
+  return {
+    ok: true,
+    headers: {
+      "access-control-allow-origin": origin,
+      "access-control-allow-methods": "POST, OPTIONS",
+      "access-control-allow-headers": "content-type, x-upload-token",
+      vary: "Origin"
+    }
+  };
+}
+
 function verifyUploadToken(token) {
   const rawToken = getEnv("UPLOAD_TOKEN");
   const hashedToken = getEnv("UPLOAD_TOKEN_SHA256");
@@ -123,29 +157,38 @@ async function getSignedUploadUrl(cos, options) {
   });
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(context) {
+  const { request } = context;
+  const cors = getCorsHeaders(request);
+
+  if (!cors.ok) {
+    return new Response(null, { status: 403 });
+  }
+
   return new Response(null, {
     status: 204,
-    headers: {
-      "access-control-allow-origin": "*",
-      "access-control-allow-methods": "POST, OPTIONS",
-      "access-control-allow-headers": "content-type, x-upload-token"
-    }
+    headers: cors.headers
   });
 }
 
 export async function onRequestPost(context) {
+  const { request } = context;
+  const cors = getCorsHeaders(request);
+
+  if (!cors.ok) {
+    return json({ error: "当前来源未被允许访问签名接口" }, 403);
+  }
+
   try {
-    const { request } = context;
     const token = request.headers.get("x-upload-token")?.trim() ?? "";
     const body = await parseBody(request);
 
     if (!verifyUploadToken(token)) {
-      return json({ error: "上传令牌无效" }, 401);
+      return json({ error: "上传令牌无效" }, 401, cors.headers);
     }
 
     if (!body) {
-      return json({ error: "请求体不是合法 JSON" }, 400);
+      return json({ error: "请求体不是合法 JSON" }, 400, cors.headers);
     }
 
     const contentType = String(body.contentType ?? "").trim().toLowerCase();
@@ -154,12 +197,12 @@ export async function onRequestPost(context) {
     const pathPrefix = normalizePrefix(String(body.pathPrefix ?? getEnv("DEFAULT_PATH_PREFIX")));
 
     if (!ALLOWED_MIME_TYPES[contentType]) {
-      return json({ error: "不支持的图片类型" }, 400);
+      return json({ error: "不支持的图片类型" }, 400, cors.headers);
     }
 
     const maxUploadSize = Number(getEnv("MAX_UPLOAD_SIZE_BYTES", `${10 * 1024 * 1024}`));
     if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > maxUploadSize) {
-      return json({ error: `文件大小超出限制，最大 ${maxUploadSize} 字节` }, 400);
+      return json({ error: `文件大小超出限制，最大 ${maxUploadSize} 字节` }, 400, cors.headers);
     }
 
     const bucket = getEnv("COS_BUCKET");
@@ -170,7 +213,7 @@ export async function onRequestPost(context) {
     const uploadExpires = Number(getEnv("SIGNED_URL_EXPIRES_SECONDS", "300"));
 
     if (!bucket || !region || !secretId || !secretKey) {
-      return json({ error: "服务端缺少 COS 配置" }, 500);
+      return json({ error: "服务端缺少 COS 配置" }, 500, cors.headers);
     }
 
     const extension = inferExtension(contentType);
@@ -198,15 +241,19 @@ export async function onRequestPost(context) {
       Headers: signedHeaders
     });
 
-    return json({
-      uploadUrl,
-      publicUrl: buildPublicUrl(publicBaseUrl, bucket, region, objectKey),
-      objectKey,
-      expiresAt: new Date(Date.now() + uploadExpires * 1000).toISOString(),
-      headers: signedHeaders
-    });
+    return json(
+      {
+        uploadUrl,
+        publicUrl: buildPublicUrl(publicBaseUrl, bucket, region, objectKey),
+        objectKey,
+        expiresAt: new Date(Date.now() + uploadExpires * 1000).toISOString(),
+        headers: signedHeaders
+      },
+      200,
+      cors.headers
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "签名接口异常";
-    return json({ error: message }, 500);
+    return json({ error: message }, 500, cors.headers);
   }
 }
