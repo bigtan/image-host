@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type UploadStatus = "queued" | "signing" | "uploading" | "done" | "error";
+type UploadProvider = "cos" | "upyun";
+
+type ProviderOption = {
+  name: UploadProvider;
+  label: string;
+  configured: boolean;
+  cdnBaseUrl: string;
+  description: string;
+};
 
 type UploadResult = {
+  provider: UploadProvider;
+  providerLabel: string;
+  cdnBaseUrl: string;
   objectKey: string;
   originalUrl: string;
   html: string;
@@ -21,16 +33,47 @@ type UploadItem = {
 };
 
 type SignResponse = {
-  uploadUrl: string;
+  provider: UploadProvider;
+  providerLabel: string;
+  cdnBaseUrl: string;
+  upload: {
+    method: "PUT" | "POST";
+    url: string;
+    headers?: Record<string, string>;
+    fields?: Record<string, string>;
+  };
   publicUrl: string;
   objectKey: string;
   expiresAt: string;
   headers: Record<string, string>;
 };
 
+type HealthResponse = {
+  ok: true;
+  defaultProvider: UploadProvider;
+  providers: ProviderOption[];
+};
+
 const TOKEN_STORAGE_KEY = "image-host.upload-token";
 const PREFIX_STORAGE_KEY = "image-host.path-prefix";
+const PROVIDER_STORAGE_KEY = "image-host.upload-provider";
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"];
+const FALLBACK_PROVIDERS: ProviderOption[] = [
+  {
+    name: "cos",
+    label: "Tencent COS",
+    configured: true,
+    cdnBaseUrl: "",
+    description: "预签名 PUT 直传"
+  },
+  {
+    name: "upyun",
+    label: "UpYun",
+    configured: false,
+    cdnBaseUrl: "",
+    description: "FORM API 直传"
+  }
+];
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -38,9 +81,13 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
-function fileToResult(url: string, objectKey: string): UploadResult {
+function fileToResult(sign: SignResponse): UploadResult {
+  const url = sign.publicUrl;
   return {
-    objectKey,
+    provider: sign.provider,
+    providerLabel: sign.providerLabel,
+    cdnBaseUrl: sign.cdnBaseUrl,
+    objectKey: sign.objectKey,
     originalUrl: url,
     html: `<img src="${url}" alt="" />`,
     markdown: `![](${url})`,
@@ -48,7 +95,12 @@ function fileToResult(url: string, objectKey: string): UploadResult {
   };
 }
 
-async function requestUploadSignature(file: File, token: string, prefix: string) {
+async function requestUploadSignature(
+  file: File,
+  token: string,
+  prefix: string,
+  provider: UploadProvider
+) {
   const response = await fetch("/api/sign-upload", {
     method: "POST",
     headers: {
@@ -59,7 +111,8 @@ async function requestUploadSignature(file: File, token: string, prefix: string)
       fileName: file.name,
       contentType: file.type,
       fileSize: file.size,
-      pathPrefix: prefix
+      pathPrefix: prefix,
+      provider
     })
   });
 
@@ -75,9 +128,9 @@ async function requestUploadSignature(file: File, token: string, prefix: string)
 function uploadToSignedUrl(file: File, sign: SignResponse, onProgress: (progress: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("PUT", sign.uploadUrl, true);
+    xhr.open(sign.upload.method, sign.upload.url, true);
 
-    Object.entries(sign.headers).forEach(([key, value]) => {
+    Object.entries(sign.upload.headers ?? sign.headers).forEach(([key, value]) => {
       xhr.setRequestHeader(key, value);
     });
 
@@ -92,10 +145,25 @@ function uploadToSignedUrl(file: File, sign: SignResponse, onProgress: (progress
         return;
       }
 
-      reject(new Error(`上传失败，COS 返回 ${xhr.status}`));
+      reject(new Error(`上传失败，${sign.providerLabel} 返回 ${xhr.status}`));
     };
 
     xhr.onerror = () => reject(new Error("上传过程中网络异常"));
+
+    if (sign.upload.method === "POST") {
+      const formData = new FormData();
+
+      Object.entries(sign.upload.fields ?? {}).forEach(([key, value]) => {
+        if (key !== "file") {
+          formData.append(key, value);
+        }
+      });
+
+      formData.append("file", file);
+      xhr.send(formData);
+      return;
+    }
+
     xhr.send(file);
   });
 }
@@ -103,19 +171,49 @@ function uploadToSignedUrl(file: File, sign: SignResponse, onProgress: (progress
 export default function App() {
   const [token, setToken] = useState("");
   const [pathPrefix, setPathPrefix] = useState("");
+  const [provider, setProvider] = useState<UploadProvider>("cos");
+  const [providers, setProviders] = useState<ProviderOption[]>(FALLBACK_PROVIDERS);
   const [items, setItems] = useState<UploadItem[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previousItemsRef = useRef<UploadItem[]>([]);
   const tokenRef = useRef("");
   const pathPrefixRef = useRef("");
+  const providerRef = useRef<UploadProvider>("cos");
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
     const storedPrefix = window.localStorage.getItem(PREFIX_STORAGE_KEY);
+    const storedProvider = window.localStorage.getItem(PROVIDER_STORAGE_KEY) as UploadProvider | null;
 
     if (storedToken) setToken(storedToken);
     if (storedPrefix) setPathPrefix(storedPrefix);
+    if (storedProvider === "cos" || storedProvider === "upyun") {
+      setProvider(storedProvider);
+    }
+
+    void fetch("/api/health")
+      .then((response) => response.json())
+      .then((payload: HealthResponse) => {
+        if (!Array.isArray(payload.providers) || !payload.providers.length) return;
+
+        setProviders(payload.providers);
+
+        const configuredNames = new Set(
+          payload.providers.filter((item) => item.configured).map((item) => item.name)
+        );
+        const preferredProvider =
+          storedProvider && configuredNames.has(storedProvider)
+            ? storedProvider
+            : configuredNames.has(payload.defaultProvider)
+              ? payload.defaultProvider
+              : payload.providers.find((item) => item.configured)?.name ?? "cos";
+
+        setProvider(preferredProvider);
+      })
+      .catch(() => {
+        // Keep the local fallback provider list when metadata is unavailable.
+      });
   }, []);
 
   useEffect(() => {
@@ -138,9 +236,15 @@ export default function App() {
     }
   }, [pathPrefix]);
 
+  useEffect(() => {
+    providerRef.current = provider;
+    window.localStorage.setItem(PROVIDER_STORAGE_KEY, provider);
+  }, [provider]);
+
   async function uploadItem(id: string, file: File) {
     const activeToken = tokenRef.current.trim();
     const activePrefix = pathPrefixRef.current.trim();
+    const activeProvider = providerRef.current;
 
     if (!activeToken) {
       setItems((current) =>
@@ -156,7 +260,7 @@ export default function App() {
         current.map((item) => (item.id === id ? { ...item, status: "signing" } : item))
       );
 
-      const sign = await requestUploadSignature(file, activeToken, activePrefix);
+      const sign = await requestUploadSignature(file, activeToken, activePrefix, activeProvider);
 
       setItems((current) =>
         current.map((item) =>
@@ -177,7 +281,7 @@ export default function App() {
                 ...item,
                 status: "done",
                 progress: 100,
-                result: fileToResult(sign.publicUrl, sign.objectKey)
+                result: fileToResult(sign)
               }
             : item
         )
@@ -247,6 +351,10 @@ export default function App() {
     () => items.filter((item) => item.status === "done").length,
     [items]
   );
+  const selectedProvider = useMemo(
+    () => providers.find((item) => item.name === provider) ?? FALLBACK_PROVIDERS[0],
+    [provider, providers]
+  );
 
   function handleFileSelection(files: FileList | null) {
     if (!files?.length) return;
@@ -265,14 +373,27 @@ export default function App() {
     <main className="page-shell">
       <section className="hero-card">
         <div className="hero-copy">
-          <span className="eyebrow">EdgeOne Pages + COS</span>
+          <span className="eyebrow">EdgeOne Pages + Multi Backend</span>
           <h1>个人图床上传台</h1>
           <p>
-            直接粘贴截图、拖拽图片或选择文件，前端拿到签名后直传 COS，上传完成立即生成原图链接和嵌入代码。
+            直接粘贴截图、拖拽图片或选择文件，按选定后端直传对象存储，上传完成立即生成原图链接和嵌入代码。
           </p>
         </div>
 
         <div className="settings-grid">
+          <label className="field-card">
+            <span>上传后端</span>
+            <select value={provider} onChange={(event) => setProvider(event.target.value as UploadProvider)}>
+              {providers.map((item) => (
+                <option key={item.name} value={item.name} disabled={!item.configured}>
+                  {item.label}
+                  {item.configured ? "" : "（未配置）"}
+                </option>
+              ))}
+            </select>
+            <small>{selectedProvider.description}</small>
+          </label>
+
           <label className="field-card">
             <span>上传令牌</span>
             <input
@@ -293,6 +414,20 @@ export default function App() {
               value={pathPrefix}
               onChange={(event) => setPathPrefix(event.target.value)}
             />
+          </label>
+
+          <label className="field-card">
+            <span>CDN 域名</span>
+            <input
+              type="text"
+              readOnly
+              value={selectedProvider.cdnBaseUrl || "当前后端未配置 CDN 域名"}
+            />
+            <small>
+              {selectedProvider.configured
+                ? `当前使用 ${selectedProvider.label} 的访问域名`
+                : `${selectedProvider.label} 还未在服务端完成配置`}
+            </small>
           </label>
         </div>
       </section>
@@ -381,6 +516,22 @@ export default function App() {
                     <textarea readOnly value={result.originalUrl} />
                     <button type="button" onClick={() => void copyText(result.originalUrl)}>
                       复制链接
+                    </button>
+                  </label>
+
+                  <label className="result-field">
+                    <span>后端 / CDN</span>
+                    <textarea
+                      readOnly
+                      value={`${result.providerLabel}\n${result.cdnBaseUrl || "未配置公开域名"}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void copyText(`${result.providerLabel}\n${result.cdnBaseUrl || ""}`.trim())
+                      }
+                    >
+                      复制信息
                     </button>
                   </label>
 

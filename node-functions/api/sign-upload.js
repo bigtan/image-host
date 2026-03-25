@@ -1,5 +1,12 @@
 import COS from "cos-nodejs-sdk-v5";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  buildCosPublicUrl,
+  buildUpyunPublicUrl,
+  getDefaultProvider,
+  getProviderCatalog,
+  normalizeProviderName
+} from "./_lib/upload-providers.js";
 
 const ALLOWED_MIME_TYPES = {
   "image/png": "png",
@@ -80,15 +87,6 @@ function createObjectKey(prefix, extension) {
   return prefix ? `${prefix}/${datePath}/${fileId}` : `${datePath}/${fileId}`;
 }
 
-function buildPublicUrl(baseUrl, bucket, region, objectKey) {
-  const trimmedBase = baseUrl.replace(/\/$/, "");
-  if (trimmedBase) {
-    return `${trimmedBase}/${objectKey}`;
-  }
-
-  return `https://${bucket}.cos.${region}.myqcloud.com/${objectKey}`;
-}
-
 function getAllowedOrigins() {
   return getEnv("CORS_ALLOWED_ORIGINS")
     .split(",")
@@ -157,6 +155,122 @@ async function getSignedUploadUrl(cos, options) {
   });
 }
 
+function createUpyunPolicy(serviceName, objectKey, contentType, maxUploadSize, expiresAt, date) {
+  return Buffer.from(
+    JSON.stringify({
+      bucket: serviceName,
+      "save-key": `/${objectKey}`,
+      expiration: expiresAt,
+      date,
+      "content-type": contentType,
+      "content-length-range": `1, ${maxUploadSize}`
+    })
+  ).toString("base64");
+}
+
+function createUpyunAuthorization(operatorName, operatorPassword, serviceName, date, policy) {
+  const passwordMd5 = createHash("md5").update(operatorPassword).digest("hex");
+  const signPayload = ["POST", `/${serviceName}`, date, policy].join("&");
+  const signature = createHmac("sha1", passwordMd5).update(signPayload).digest("base64");
+  return `UPYUN ${operatorName}:${signature}`;
+}
+
+async function signCosUpload(contentType, fileSize, fileName, objectKey, uploadExpires) {
+  const bucket = getEnv("COS_BUCKET");
+  const region = getEnv("COS_REGION");
+  const secretId = getEnv("COS_SECRET_ID");
+  const secretKey = getEnv("COS_SECRET_KEY");
+  const publicBaseUrl = getEnv("COS_PUBLIC_BASE_URL");
+
+  if (!bucket || !region || !secretId || !secretKey) {
+    throw new Error("服务端缺少 COS 配置");
+  }
+
+  const extension = inferExtension(contentType);
+  const downloadFileName = sanitizeDownloadFileName(fileName, extension);
+  const cos = new COS({
+    SecretId: secretId,
+    SecretKey: secretKey
+  });
+
+  const signedHeaders = {
+    "Content-Type": contentType,
+    "Content-Length": String(fileSize),
+    "Content-Disposition": buildContentDisposition(downloadFileName)
+  };
+
+  const uploadUrl = await getSignedUploadUrl(cos, {
+    Bucket: bucket,
+    Region: region,
+    Key: objectKey,
+    Method: "PUT",
+    Sign: true,
+    Expires: uploadExpires,
+    Query: {},
+    Headers: signedHeaders
+  });
+
+  return {
+    provider: "cos",
+    providerLabel: "Tencent COS",
+    cdnBaseUrl: buildCosPublicUrl(publicBaseUrl, bucket, region, "").replace(/\/$/, ""),
+    upload: {
+      method: "PUT",
+      url: uploadUrl,
+      headers: signedHeaders
+    },
+    publicUrl: buildCosPublicUrl(publicBaseUrl, bucket, region, objectKey)
+  };
+}
+
+function signUpyunUpload(contentType, maxUploadSize, objectKey, uploadExpires) {
+  const serviceName = getEnv("UPYUN_SERVICE_NAME");
+  const operatorName = getEnv("UPYUN_OPERATOR_NAME");
+  const operatorPassword = getEnv("UPYUN_OPERATOR_PASSWORD");
+  const publicBaseUrl = getEnv("UPYUN_PUBLIC_BASE_URL");
+  const apiHost = getEnv("UPYUN_API_HOST", "v0.api.upyun.com");
+
+  if (!serviceName || !operatorName || !operatorPassword) {
+    throw new Error("服务端缺少 UpYun 配置");
+  }
+
+  const date = new Date().toUTCString();
+  const expiration = Math.floor(Date.now() / 1000) + uploadExpires;
+  const policy = createUpyunPolicy(
+    serviceName,
+    objectKey,
+    contentType,
+    maxUploadSize,
+    expiration,
+    date
+  );
+  const authorization = createUpyunAuthorization(
+    operatorName,
+    operatorPassword,
+    serviceName,
+    date,
+    policy
+  );
+
+  return {
+    provider: "upyun",
+    providerLabel: "UpYun",
+    cdnBaseUrl: buildUpyunPublicUrl(publicBaseUrl, serviceName, "").replace(/\/$/, ""),
+    upload: {
+      method: "POST",
+      url: `https://${apiHost.replace(/^https?:\/\//, "").replace(/\/+$/, "")}/${serviceName}`,
+      fields: {
+        policy,
+        authorization,
+        date,
+        "content-type": contentType,
+        file: ""
+      }
+    },
+    publicUrl: buildUpyunPublicUrl(publicBaseUrl, serviceName, objectKey)
+  };
+}
+
 export async function onRequestOptions(context) {
   const { request } = context;
   const cors = getCorsHeaders(request);
@@ -195,6 +309,8 @@ export async function onRequestPost(context) {
     const fileSize = Number(body.fileSize ?? 0);
     const fileName = String(body.fileName ?? "").trim();
     const pathPrefix = normalizePrefix(String(body.pathPrefix ?? getEnv("DEFAULT_PATH_PREFIX")));
+    const catalog = getProviderCatalog();
+    const provider = normalizeProviderName(body.provider ?? getDefaultProvider());
 
     if (!ALLOWED_MIME_TYPES[contentType]) {
       return json({ error: "不支持的图片类型" }, 400, cors.headers);
@@ -205,49 +321,29 @@ export async function onRequestPost(context) {
       return json({ error: `文件大小超出限制，最大 ${maxUploadSize} 字节` }, 400, cors.headers);
     }
 
-    const bucket = getEnv("COS_BUCKET");
-    const region = getEnv("COS_REGION");
-    const secretId = getEnv("COS_SECRET_ID");
-    const secretKey = getEnv("COS_SECRET_KEY");
-    const publicBaseUrl = getEnv("COS_PUBLIC_BASE_URL");
-    const uploadExpires = Number(getEnv("SIGNED_URL_EXPIRES_SECONDS", "300"));
-
-    if (!bucket || !region || !secretId || !secretKey) {
-      return json({ error: "服务端缺少 COS 配置" }, 500, cors.headers);
+    if (!catalog[provider]?.configured) {
+      return json({ error: `${catalog[provider]?.label ?? provider} 未配置或不可用` }, 400, cors.headers);
     }
+
+    const uploadExpires = Number(getEnv("SIGNED_URL_EXPIRES_SECONDS", "300"));
 
     const extension = inferExtension(contentType);
     const objectKey = createObjectKey(pathPrefix, extension);
-    const downloadFileName = sanitizeDownloadFileName(fileName, extension);
-    const cos = new COS({
-      SecretId: secretId,
-      SecretKey: secretKey
-    });
-
-    const signedHeaders = {
-      "Content-Type": contentType,
-      "Content-Length": String(fileSize),
-      "Content-Disposition": buildContentDisposition(downloadFileName)
-    };
-
-    const uploadUrl = await getSignedUploadUrl(cos, {
-      Bucket: bucket,
-      Region: region,
-      Key: objectKey,
-      Method: "PUT",
-      Sign: true,
-      Expires: uploadExpires,
-      Query: {},
-      Headers: signedHeaders
-    });
+    const signResult =
+      provider === "upyun"
+        ? signUpyunUpload(contentType, maxUploadSize, objectKey, uploadExpires)
+        : await signCosUpload(contentType, fileSize, fileName, objectKey, uploadExpires);
 
     return json(
       {
-        uploadUrl,
-        publicUrl: buildPublicUrl(publicBaseUrl, bucket, region, objectKey),
+        provider: signResult.provider,
+        providerLabel: signResult.providerLabel,
+        cdnBaseUrl: signResult.cdnBaseUrl,
+        upload: signResult.upload,
+        publicUrl: signResult.publicUrl,
         objectKey,
         expiresAt: new Date(Date.now() + uploadExpires * 1000).toISOString(),
-        headers: signedHeaders
+        headers: signResult.upload.headers ?? {}
       },
       200,
       cors.headers

@@ -1,6 +1,6 @@
 # image-host
 
-基于 EdgeOne Pages Node Functions 和腾讯云 COS 的个人图床。
+基于 EdgeOne Pages Node Functions 的个人图床，支持腾讯云 COS 和 UpYun 两种上传后端。
 
 ## 技术栈
 
@@ -9,6 +9,7 @@
 - TypeScript 5
 - EdgeOne Pages Node Functions
 - Tencent COS 预签名直传
+- UpYun FORM API 直传
 
 ## 已实现
 
@@ -16,8 +17,9 @@
 - `Ctrl + V` 粘贴截图上传
 - 本地保存上传令牌和对象前缀
 - Node Functions 校验上传令牌
-- 函数签发 COS 预签名 PUT URL
+- 函数按后端签发 COS 预签名 PUT URL 或 UpYun FORM API 参数
 - 上传完成后生成原始链接、HTML、Markdown、BBCode
+- 前端切换上传后端，并显示对应 CDN 域名
 
 ## 本地开发
 
@@ -47,6 +49,18 @@ pnpm dev
 - `COS_REGION`
 - `COS_PUBLIC_BASE_URL`
   图片公开访问域名，建议使用你绑定到 COS 的自定义域名。
+- `UPYUN_SERVICE_NAME`
+  又拍云服务名称。
+- `UPYUN_OPERATOR_NAME`
+  又拍云操作员名称。
+- `UPYUN_OPERATOR_PASSWORD`
+  又拍云操作员密码，函数会在服务端按官方规则计算签名。
+- `UPYUN_PUBLIC_BASE_URL`
+  又拍云公开访问域名，建议填写你绑定的 CDN 域名；为空时会回退到 `https://<服务名>.test.upcdn.net`。
+- `UPYUN_API_HOST`
+  又拍云上传接口域名，默认 `v0.api.upyun.com`。
+- `DEFAULT_UPLOAD_PROVIDER`
+  默认上传后端，可选 `cos` 或 `upyun`。
 - `DEFAULT_PATH_PREFIX`
   默认对象前缀，例如 `forum`。
 - `MAX_UPLOAD_SIZE_BYTES`
@@ -75,17 +89,20 @@ pnpm dev
 CORS_ALLOWED_ORIGINS=http://localhost:3000,https://img.example.com
 ```
 
-### 2. COS Bucket 直传 CORS
+### 2. 对象存储直传 CORS
 
-浏览器拿到预签名 URL 后，上传目标已经变成 COS，因此 COS Bucket 也必须允许你的前端来源发起直传请求。
+浏览器拿到签名后，上传目标会变成对应存储服务，因此对象存储侧也必须允许你的前端来源发起直传请求。
 
-至少允许：
+COS 至少允许：
 
 - 来源：你的前端域名
 - 方法：`PUT`, `GET`, `HEAD`
 - 允许头：`Content-Type`, `Content-Length`, `Content-Disposition`
 
-如果 `COS_PUBLIC_BASE_URL` 为空，前端会回显 COS 默认访问地址。
+UpYun 使用 FORM API，前端会以 `POST` 表单直传。建议确认你的业务域名/测试域名允许浏览器跨域上传。
+
+如果 `COS_PUBLIC_BASE_URL` 为空，前端会回显 COS 默认访问地址。  
+如果 `UPYUN_PUBLIC_BASE_URL` 为空，前端会回显 UpYun 默认测试域名。
 
 ## EdgeOne Pages 部署
 
@@ -121,8 +138,8 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000,https://img.example.com
 1. 前端读取文件或粘贴截图
 2. 调用 `/api/sign-upload`
 3. Node Function 校验 `Origin` 和 `x-upload-token`
-4. 函数使用 COS 密钥为单个对象生成短期 PUT URL
-5. 浏览器直接 PUT 到 COS
+4. 函数根据选定后端生成 COS 预签名 URL 或 UpYun FORM API 参数
+5. 浏览器直接上传到对应对象存储
 6. 前端展示嵌入代码
 
 ## 后续建议

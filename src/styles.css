@@ -31,6 +31,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -114,6 +115,7 @@ button {
 }
 
 .field-card input,
+.field-card select,
 .result-field textarea {
   width: 100%;
   border: 1px solid rgba(24, 21, 17, 0.14);
@@ -121,6 +123,11 @@ button {
   color: var(--ink);
   border-radius: 14px;
   padding: 12px 14px;
+}
+
+.field-card small {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .dropzone {

@@ -1,9 +1,13 @@
+import { getDefaultProvider, getProviderList } from "./_lib/upload-providers.js";
+
 export async function onRequestGet() {
   return new Response(
     JSON.stringify({
       ok: true,
       service: "image-host",
-      now: new Date().toISOString()
+      now: new Date().toISOString(),
+      defaultProvider: getDefaultProvider(),
+      providers: getProviderList()
     }),
     {
       headers: {
