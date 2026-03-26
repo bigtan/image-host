@@ -376,7 +376,7 @@ export default function App() {
           <span className="eyebrow">EdgeOne Pages + Multi Backend</span>
           <h1>个人图床上传台</h1>
           <p>
-            直接粘贴截图、拖拽图片或选择文件，按选定后端直传对象存储，上传完成立即生成原图链接和嵌入代码。
+            简洁、快速且安全的图片托管方案。支持直接粘贴、拖拽或点击上传。
           </p>
         </div>
 
@@ -387,7 +387,7 @@ export default function App() {
               {providers.map((item) => (
                 <option key={item.name} value={item.name} disabled={!item.configured}>
                   {item.label}
-                  {item.configured ? "" : "（未配置）"}
+                  {item.configured ? "" : " (未配置)"}
                 </option>
               ))}
             </select>
@@ -399,14 +399,14 @@ export default function App() {
             <input
               type="password"
               autoComplete="off"
-              placeholder="会保存到 localStorage"
+              placeholder="令牌将保存至本地"
               value={token}
               onChange={(event) => setToken(event.target.value)}
             />
           </label>
 
           <label className="field-card">
-            <span>对象前缀</span>
+            <span>路径前缀</span>
             <input
               type="text"
               autoComplete="off"
@@ -421,13 +421,8 @@ export default function App() {
             <input
               type="text"
               readOnly
-              value={selectedProvider.cdnBaseUrl || "当前后端未配置 CDN 域名"}
+              value={selectedProvider.cdnBaseUrl || "当前后端未配置域名"}
             />
-            <small>
-              {selectedProvider.configured
-                ? `当前使用 ${selectedProvider.label} 的访问域名`
-                : `${selectedProvider.label} 还未在服务端完成配置`}
-            </small>
           </label>
         </div>
       </section>
@@ -458,8 +453,8 @@ export default function App() {
           }}
         />
         <div className="dropzone-content">
-          <strong>拖拽图片到这里</strong>
-          <p>也支持点击选择文件，或者直接 Ctrl + V 粘贴截图上传</p>
+          <strong>准备好上传了吗？</strong>
+          <p>拖拽图片到这里，点击浏览，或者直接从剪贴板粘贴</p>
         </div>
       </section>
 
@@ -469,19 +464,19 @@ export default function App() {
           <strong>{items.length}</strong>
         </div>
         <div className="stat-pill">
-          <span>完成上传</span>
+          <span>已完成</span>
           <strong>{completedCount}</strong>
         </div>
         <button type="button" className="ghost-button" onClick={clearFinished}>
-          清除已完成
+          清空已完成
         </button>
       </section>
 
       <section className="queue-grid">
         {items.length === 0 ? (
           <article className="empty-card">
-            <h2>还没有文件</h2>
-            <p>把截图直接粘贴进页面，就能测试完整上传链路。</p>
+            <h2>暂无文件</h2>
+            <p>上传后的图片将在这里显示。</p>
           </article>
         ) : null}
 
@@ -490,8 +485,6 @@ export default function App() {
 
           return (
             <article key={item.id} className="upload-card">
-              <img src={item.previewUrl} alt={item.file.name} className="preview-image" />
-
               <div className="upload-meta">
                 <div>
                   <h3>{item.file.name || "clipboard-image.png"}</h3>
@@ -499,7 +492,6 @@ export default function App() {
                     {item.file.type || "unknown"} · {formatBytes(item.file.size)}
                   </p>
                 </div>
-
                 <span className={`status-chip status-${item.status}`}>{item.status}</span>
               </div>
 
@@ -509,55 +501,41 @@ export default function App() {
 
               {item.error ? <p className="error-text">{item.error}</p> : null}
 
+              <img src={item.previewUrl} alt={item.file.name} className="preview-image" />
+
               {result ? (
                 <div className="result-grid">
-                  <label className="result-field">
-                    <span>原始链接</span>
+                  <div className="result-field">
+                    <span>原图链接</span>
                     <textarea readOnly value={result.originalUrl} />
                     <button type="button" onClick={() => void copyText(result.originalUrl)}>
                       复制链接
                     </button>
-                  </label>
+                  </div>
 
-                  <label className="result-field">
-                    <span>后端 / CDN</span>
-                    <textarea
-                      readOnly
-                      value={`${result.providerLabel}\n${result.cdnBaseUrl || "未配置公开域名"}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void copyText(`${result.providerLabel}\n${result.cdnBaseUrl || ""}`.trim())
-                      }
-                    >
-                      复制信息
-                    </button>
-                  </label>
-
-                  <label className="result-field">
-                    <span>HTML</span>
-                    <textarea readOnly value={result.html} />
-                    <button type="button" onClick={() => void copyText(result.html)}>
-                      复制 HTML
-                    </button>
-                  </label>
-
-                  <label className="result-field">
+                  <div className="result-field">
                     <span>Markdown</span>
                     <textarea readOnly value={result.markdown} />
                     <button type="button" onClick={() => void copyText(result.markdown)}>
                       复制 Markdown
                     </button>
-                  </label>
+                  </div>
 
-                  <label className="result-field">
+                  <div className="result-field">
+                    <span>HTML</span>
+                    <textarea readOnly value={result.html} />
+                    <button type="button" onClick={() => void copyText(result.html)}>
+                      复制 HTML
+                    </button>
+                  </div>
+
+                  <div className="result-field">
                     <span>BBCode</span>
                     <textarea readOnly value={result.bbcode} />
                     <button type="button" onClick={() => void copyText(result.bbcode)}>
                       复制 BBCode
                     </button>
-                  </label>
+                  </div>
                 </div>
               ) : null}
             </article>
