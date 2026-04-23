@@ -4,9 +4,9 @@
 
 ## 技术栈
 
-- Vite 7
+- Vite 8
 - React 19
-- TypeScript 5
+- TypeScript 6
 - EdgeOne Pages Node Functions
 - Tencent COS 预签名直传
 - UpYun FORM API 直传
@@ -23,6 +23,8 @@
 
 ## 本地开发
 
+本项目只使用 `pnpm` 管理依赖，请不要混用 `npm install` 或提交 `package-lock.json`。
+
 先安装依赖：
 
 ```bash
@@ -33,6 +35,12 @@ pnpm install
 
 ```bash
 pnpm dev
+```
+
+构建产物：
+
+```bash
+pnpm build
 ```
 
 ## 环境变量
@@ -129,7 +137,8 @@ UpYun 使用 FORM API，前端会以 `POST` 表单直传。建议确认你的业
 因此当前工作流的职责是构建校验，它会：
 
 1. 使用 `pnpm` 安装依赖并构建前端
-2. 在 `push` 和 `pull_request` 时验证项目可以成功构建
+2. 严格使用 `pnpm-lock.yaml` 保证依赖树一致
+3. 在 `push` 和 `pull_request` 时验证项目可以成功构建
 
 如果你想走 GitHub Actions 直接上传部署，必须在 EdgeOne 新建一个 `Upload` 类型项目，而不是复用当前的 GitHub 集成项目。
 
