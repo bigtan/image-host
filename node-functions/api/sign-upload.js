@@ -1,5 +1,6 @@
 import COS from "cos-nodejs-sdk-v5";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 import {
   buildCosPublicUrl,
   buildUpyunPublicUrl,
@@ -285,6 +286,14 @@ export async function onRequestOptions(context) {
   });
 }
 
+const uploadPayloadSchema = z.object({
+  fileName: z.string().min(1, "文件名不能为空").max(255, "文件名长度超限"),
+  contentType: z.string().trim().toLowerCase(),
+  fileSize: z.number().int().positive("文件大小必须为正数"),
+  pathPrefix: z.string().optional(),
+  provider: z.string().optional()
+});
+
 export async function onRequestPost(context) {
   const { request } = context;
   const cors = getCorsHeaders(request);
@@ -305,19 +314,26 @@ export async function onRequestPost(context) {
       return json({ error: "请求体不是合法 JSON" }, 400, cors.headers);
     }
 
-    const contentType = String(body.contentType ?? "").trim().toLowerCase();
-    const fileSize = Number(body.fileSize ?? 0);
-    const fileName = String(body.fileName ?? "").trim();
-    const pathPrefix = normalizePrefix(String(body.pathPrefix ?? getEnv("DEFAULT_PATH_PREFIX")));
+    const validationResult = uploadPayloadSchema.safeParse(body);
+    if (!validationResult.success) {
+      const errorMsg = validationResult.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ");
+      return json({ error: `参数校验失败: ${errorMsg}` }, 400, cors.headers);
+    }
+
+    const validatedData = validationResult.data;
+    const contentType = validatedData.contentType;
+    const fileSize = validatedData.fileSize;
+    const fileName = validatedData.fileName;
+    const pathPrefix = normalizePrefix(String(validatedData.pathPrefix ?? getEnv("DEFAULT_PATH_PREFIX")));
     const catalog = getProviderCatalog();
-    const provider = normalizeProviderName(body.provider ?? getDefaultProvider());
+    const provider = normalizeProviderName(validatedData.provider ?? getDefaultProvider());
 
     if (!ALLOWED_MIME_TYPES[contentType]) {
       return json({ error: "不支持的图片类型" }, 400, cors.headers);
     }
 
     const maxUploadSize = Number(getEnv("MAX_UPLOAD_SIZE_BYTES", `${10 * 1024 * 1024}`));
-    if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > maxUploadSize) {
+    if (fileSize > maxUploadSize) {
       return json({ error: `文件大小超出限制，最大 ${maxUploadSize} 字节` }, 400, cors.headers);
     }
 
