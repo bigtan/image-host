@@ -1,59 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-
-type UploadStatus = "queued" | "signing" | "uploading" | "done" | "error";
-type UploadProvider = "cos" | "upyun";
-
-type ProviderOption = {
-  name: UploadProvider;
-  label: string;
-  configured: boolean;
-  cdnBaseUrl: string;
-  description: string;
-};
-
-type UploadResult = {
-  provider: UploadProvider;
-  providerLabel: string;
-  cdnBaseUrl: string;
-  objectKey: string;
-  originalUrl: string;
-  html: string;
-  markdown: string;
-  bbcode: string;
-};
-
-type UploadItem = {
-  id: string;
-  file: File;
-  previewUrl: string;
-  progress: number;
-  status: UploadStatus;
-  error?: string;
-  result?: UploadResult;
-};
-
-type SignResponse = {
-  provider: UploadProvider;
-  providerLabel: string;
-  cdnBaseUrl: string;
-  upload: {
-    method: "PUT" | "POST";
-    url: string;
-    headers?: Record<string, string>;
-    fields?: Record<string, string>;
-  };
-  publicUrl: string;
-  objectKey: string;
-  expiresAt: string;
-  headers: Record<string, string>;
-};
-
-type HealthResponse = {
-  ok: true;
-  defaultProvider: UploadProvider;
-  providers: ProviderOption[];
-  maxUploadSize?: number;
-};
+import {
+  CheckIcon,
+  CloudIcon,
+  CopyIcon,
+  FolderIcon,
+  ImageIcon,
+  InfoIcon,
+  LockIcon,
+  EyeIcon,
+  EyeOffIcon,
+  ServerIcon,
+  TrashIcon,
+  XIcon
+} from "./icons";
+import {
+  fileToResult,
+  formatBytes,
+  requestUploadSignature,
+  uploadToSignedUrl
+} from "./upload";
+import type {
+  HealthResponse,
+  ProviderOption,
+  UploadItem,
+  UploadProvider,
+  UploadResult
+} from "./types";
 
 const TOKEN_STORAGE_KEY = "image-host.upload-token";
 const PREFIX_STORAGE_KEY = "image-host.path-prefix";
@@ -81,149 +53,6 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
     description: "FORM API 直传"
   }
 ];
-
-const EyeIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0z"/><circle cx="12" cy="12" r="3"/></svg>
-);
-
-const EyeOffIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20"/></svg>
-);
-
-const CloudIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M12 12v9m-4-4 4-4 4 4"/></svg>
-);
-
-const LockIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-);
-
-const FolderIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
-);
-
-const ServerIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
-);
-
-const InfoIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>
-);
-
-const TrashIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2m-9 5v6m4-6v6"/></svg>
-);
-
-const XIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><path d="M18 6 6 18M6 6l12 12"/></svg>
-);
-
-const CopyIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-);
-
-const CheckIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><path d="m9 11 3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-);
-
-const ImageIcon = ({ className = "icon", ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg className={className} viewBox="0 0 24 24" {...props}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-);
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function fileToResult(sign: SignResponse): UploadResult {
-  const url = sign.publicUrl;
-  return {
-    provider: sign.provider,
-    providerLabel: sign.providerLabel,
-    cdnBaseUrl: sign.cdnBaseUrl,
-    objectKey: sign.objectKey,
-    originalUrl: url,
-    html: `<img src="${url}" alt="" />`,
-    markdown: `![](${url})`,
-    bbcode: `[img]${url}[/img]`
-  };
-}
-
-async function requestUploadSignature(
-  file: File,
-  token: string,
-  prefix: string,
-  provider: UploadProvider
-) {
-  const response = await fetch("/api/sign-upload", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-upload-token": token
-    },
-    body: JSON.stringify({
-      fileName: file.name,
-      contentType: file.type,
-      fileSize: file.size,
-      pathPrefix: prefix,
-      provider
-    })
-  });
-
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload.error ?? "签名失败");
-  }
-
-  return payload as SignResponse;
-}
-
-function uploadToSignedUrl(file: File, sign: SignResponse, onProgress: (progress: number) => void) {
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open(sign.upload.method, sign.upload.url, true);
-
-    Object.entries(sign.upload.headers ?? sign.headers).forEach(([key, value]) => {
-      // 浏览器禁止手动设置 Content-Length，会自动按请求体填入正确值
-      if (key.toLowerCase() === "content-length") return;
-      xhr.setRequestHeader(key, value);
-    });
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      onProgress(Math.round((event.loaded / event.total) * 100));
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`上传失败，${sign.providerLabel} 返回 ${xhr.status}`));
-    };
-
-    xhr.onerror = () => reject(new Error("上传过程中网络异常"));
-
-    if (sign.upload.method === "POST") {
-      const formData = new FormData();
-
-      Object.entries(sign.upload.fields ?? {}).forEach(([key, value]) => {
-        if (key !== "file") {
-          formData.append(key, value);
-        }
-      });
-
-      formData.append("file", file);
-      xhr.send(formData);
-      return;
-    }
-
-    xhr.send(file);
-  });
-}
 
 function CopyButton({
   text,
