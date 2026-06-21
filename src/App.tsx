@@ -102,6 +102,7 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [globalDragging, setGlobalDragging] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previousItemsRef = useRef<UploadItem[]>([]);
@@ -244,7 +245,7 @@ export default function App() {
       return true;
     });
     if (rejected.length) {
-      alert(`以下文件已被跳过：\n${rejected.join("\n")}\n\n仅支持 PNG, JPEG, WEBP, GIF, AVIF 图片。`);
+      setNotice(`已跳过 ${rejected.length} 个文件：${rejected.join("、")}。仅支持 PNG, JPEG, WEBP, GIF, AVIF 图片。`);
     }
     if (!candidates.length) return;
 
@@ -346,6 +347,12 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   const doneResults = useMemo(
     () =>
       items
@@ -388,6 +395,16 @@ export default function App() {
           <p>支持拖拽多个 PNG, JPEG, WEBP, GIF, AVIF 格式图片</p>
         </div>
       </div>
+
+      {notice ? (
+        <div className="notice-banner" role="alert">
+          <InfoIcon />
+          <span>{notice}</span>
+          <button type="button" className="notice-close" onClick={() => setNotice(null)} aria-label="关闭提示">
+            <XIcon />
+          </button>
+        </div>
+      ) : null}
 
       <section className="hero-card">
         <div className="hero-copy">
