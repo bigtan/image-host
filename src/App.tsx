@@ -225,6 +225,45 @@ function uploadToSignedUrl(file: File, sign: SignResponse, onProgress: (progress
   });
 }
 
+function CopyButton({
+  text,
+  idleLabel,
+  copiedLabel,
+  className = ""
+}: {
+  text: string;
+  idleLabel: string;
+  copiedLabel: string;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 剪贴板不可用时静默忽略
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className={`${className} ${copied ? "btn-success" : ""}`.trim()}
+      onClick={() => void handleCopy()}
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+      {copied ? copiedLabel : idleLabel}
+    </button>
+  );
+}
+
 export default function App() {
   const [token, setToken] = useState("");
   const [pathPrefix, setPathPrefix] = useState("");
@@ -234,7 +273,6 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [globalDragging, setGlobalDragging] = useState(false);
-  const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previousItemsRef = useRef<UploadItem[]>([]);
@@ -479,10 +517,14 @@ export default function App() {
     };
   }, []);
 
-  const completedCount = useMemo(
-    () => items.filter((item) => item.status === "done").length,
+  const doneResults = useMemo(
+    () =>
+      items
+        .filter((item) => item.status === "done" && item.result)
+        .map((item) => item.result as UploadResult),
     [items]
   );
+  const completedCount = doneResults.length;
   const selectedProvider = useMemo(
     () => providers.find((item) => item.name === provider) ?? FALLBACK_PROVIDERS[0],
     [provider, providers]
@@ -506,18 +548,6 @@ export default function App() {
       return current.filter((item) => item.id !== id);
     });
   }
-
-  const triggerCopy = async (id: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedStates((current) => ({ ...current, [id]: true }));
-      setTimeout(() => {
-        setCopiedStates((current) => ({ ...current, [id]: false }));
-      }, 1500);
-    } catch {
-      // ignore
-    }
-  };
 
   return (
     <main className="page-shell">
@@ -651,39 +681,24 @@ export default function App() {
 
         {completedCount > 0 && (
           <div className="batch-actions">
-            <button
-              type="button"
-              className={`batch-button ${copiedStates["batch-url"] ? "btn-success" : ""}`}
-              onClick={() => {
-                const urls = items.filter(item => item.status === "done" && item.result).map(item => item.result!.originalUrl).join("\n");
-                void triggerCopy("batch-url", urls);
-              }}
-            >
-              {copiedStates["batch-url"] ? <CheckIcon /> : <CopyIcon />}
-              {copiedStates["batch-url"] ? "链接已复制" : "复制全部链接"}
-            </button>
-            <button
-              type="button"
-              className={`batch-button ${copiedStates["batch-markdown"] ? "btn-success" : ""}`}
-              onClick={() => {
-                const mds = items.filter(item => item.status === "done" && item.result).map(item => item.result!.markdown).join("\n");
-                void triggerCopy("batch-markdown", mds);
-              }}
-            >
-              {copiedStates["batch-markdown"] ? <CheckIcon /> : <CopyIcon />}
-              {copiedStates["batch-markdown"] ? "Markdown已复制" : "复制全部 Markdown"}
-            </button>
-            <button
-              type="button"
-              className={`batch-button ${copiedStates["batch-html"] ? "btn-success" : ""}`}
-              onClick={() => {
-                const htmls = items.filter(item => item.status === "done" && item.result).map(item => item.result!.html).join("\n");
-                void triggerCopy("batch-html", htmls);
-              }}
-            >
-              {copiedStates["batch-html"] ? <CheckIcon /> : <CopyIcon />}
-              {copiedStates["batch-html"] ? "HTML已复制" : "复制全部 HTML"}
-            </button>
+            <CopyButton
+              className="batch-button"
+              text={doneResults.map((result) => result.originalUrl).join("\n")}
+              idleLabel="复制全部链接"
+              copiedLabel="链接已复制"
+            />
+            <CopyButton
+              className="batch-button"
+              text={doneResults.map((result) => result.markdown).join("\n")}
+              idleLabel="复制全部 Markdown"
+              copiedLabel="Markdown已复制"
+            />
+            <CopyButton
+              className="batch-button"
+              text={doneResults.map((result) => result.html).join("\n")}
+              idleLabel="复制全部 HTML"
+              copiedLabel="HTML已复制"
+            />
           </div>
         )}
 
@@ -704,6 +719,14 @@ export default function App() {
 
         {items.map((item) => {
           const result = item.result;
+          const resultFields = result
+            ? [
+                { label: "原图链接", value: result.originalUrl, copyLabel: "复制链接" },
+                { label: "Markdown", value: result.markdown, copyLabel: "复制 Markdown" },
+                { label: "HTML", value: result.html, copyLabel: "复制 HTML" },
+                { label: "BBCode", value: result.bbcode, copyLabel: "复制 BBCode" }
+              ]
+            : [];
 
           return (
             <article key={item.id} className="upload-card">
@@ -736,57 +759,13 @@ export default function App() {
 
               {result ? (
                 <div className="result-grid">
-                  <div className="result-field">
-                    <span>原图链接</span>
-                    <textarea readOnly value={result.originalUrl} />
-                    <button 
-                      type="button" 
-                      className={copiedStates[`${item.id}-url`] ? "btn-success" : ""}
-                      onClick={() => void triggerCopy(`${item.id}-url`, result.originalUrl)}
-                    >
-                      {copiedStates[`${item.id}-url`] ? <CheckIcon /> : <CopyIcon />}
-                      {copiedStates[`${item.id}-url`] ? "已复制" : "复制链接"}
-                    </button>
-                  </div>
-
-                  <div className="result-field">
-                    <span>Markdown</span>
-                    <textarea readOnly value={result.markdown} />
-                    <button 
-                      type="button" 
-                      className={copiedStates[`${item.id}-md`] ? "btn-success" : ""}
-                      onClick={() => void triggerCopy(`${item.id}-md`, result.markdown)}
-                    >
-                      {copiedStates[`${item.id}-md`] ? <CheckIcon /> : <CopyIcon />}
-                      {copiedStates[`${item.id}-md`] ? "已复制" : "复制 Markdown"}
-                    </button>
-                  </div>
-
-                  <div className="result-field">
-                    <span>HTML</span>
-                    <textarea readOnly value={result.html} />
-                    <button 
-                      type="button" 
-                      className={copiedStates[`${item.id}-html`] ? "btn-success" : ""}
-                      onClick={() => void triggerCopy(`${item.id}-html`, result.html)}
-                    >
-                      {copiedStates[`${item.id}-html`] ? <CheckIcon /> : <CopyIcon />}
-                      {copiedStates[`${item.id}-html`] ? "已复制" : "复制 HTML"}
-                    </button>
-                  </div>
-
-                  <div className="result-field">
-                    <span>BBCode</span>
-                    <textarea readOnly value={result.bbcode} />
-                    <button 
-                      type="button" 
-                      className={copiedStates[`${item.id}-bbcode`] ? "btn-success" : ""}
-                      onClick={() => void triggerCopy(`${item.id}-bbcode`, result.bbcode)}
-                    >
-                      {copiedStates[`${item.id}-bbcode`] ? <CheckIcon /> : <CopyIcon />}
-                      {copiedStates[`${item.id}-bbcode`] ? "已复制" : "复制 BBCode"}
-                    </button>
-                  </div>
+                  {resultFields.map((field) => (
+                    <div className="result-field" key={field.label}>
+                      <span>{field.label}</span>
+                      <textarea readOnly value={field.value} />
+                      <CopyButton text={field.value} idleLabel={field.copyLabel} copiedLabel="已复制" />
+                    </div>
+                  ))}
                 </div>
               ) : null}
             </article>
