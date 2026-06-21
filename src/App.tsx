@@ -60,6 +60,7 @@ const PREFIX_STORAGE_KEY = "image-host.path-prefix";
 const PROVIDER_STORAGE_KEY = "image-host.upload-provider";
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"];
 const DEFAULT_MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+const UPLOAD_CONCURRENCY = 3;
 
 function isAcceptedImage(file: File) {
   return ACCEPTED_TYPES.includes(file.type);
@@ -390,9 +391,16 @@ export default function App() {
 
     setItems((current) => [...nextItems, ...current]);
 
-    for (const item of nextItems) {
-      await uploadItem(item.id, item.file);
-    }
+    // 并发上传，最多同时处理 UPLOAD_CONCURRENCY 个，其余排队
+    const queue = [...nextItems];
+    const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, queue.length) }, async () => {
+      while (queue.length) {
+        const item = queue.shift();
+        if (!item) break;
+        await uploadItem(item.id, item.file);
+      }
+    });
+    await Promise.all(workers);
   }
 
   useEffect(() => {
