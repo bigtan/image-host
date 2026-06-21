@@ -465,6 +465,9 @@ export default function App() {
 
       <section
         className={`dropzone ${dragging ? "is-dragging" : ""}`}
+        role="button"
+        tabIndex={0}
+        aria-label="选择或拖拽图片上传"
         onDragOver={(event) => {
           event.preventDefault();
           setDragging(true);
@@ -477,6 +480,12 @@ export default function App() {
           handleFileSelection(event.dataTransfer.files);
         }}
         onClick={() => fileInputRef.current?.click()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
       >
         <input
           ref={fileInputRef}
