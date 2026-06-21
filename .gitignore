@@ -6,3 +6,8 @@ dist
 .DS_Store
 package-lock.json
 
+# 构建产物 / TS 增量缓存（由源码生成，不应入库）
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
