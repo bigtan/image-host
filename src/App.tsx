@@ -179,6 +179,8 @@ function uploadToSignedUrl(file: File, sign: SignResponse, onProgress: (progress
     xhr.open(sign.upload.method, sign.upload.url, true);
 
     Object.entries(sign.upload.headers ?? sign.headers).forEach(([key, value]) => {
+      // 浏览器禁止手动设置 Content-Length，会自动按请求体填入正确值
+      if (key.toLowerCase() === "content-length") return;
       xhr.setRequestHeader(key, value);
     });
 
