@@ -7,7 +7,8 @@ export async function onRequestGet() {
       service: "image-host",
       now: new Date().toISOString(),
       defaultProvider: getDefaultProvider(),
-      providers: getProviderList()
+      providers: getProviderList(),
+      maxUploadSize: Number(process.env.MAX_UPLOAD_SIZE_BYTES) || 10 * 1024 * 1024
     }),
     {
       headers: {

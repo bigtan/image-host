@@ -52,12 +52,18 @@ type HealthResponse = {
   ok: true;
   defaultProvider: UploadProvider;
   providers: ProviderOption[];
+  maxUploadSize?: number;
 };
 
 const TOKEN_STORAGE_KEY = "image-host.upload-token";
 const PREFIX_STORAGE_KEY = "image-host.path-prefix";
 const PROVIDER_STORAGE_KEY = "image-host.upload-provider";
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"];
+const DEFAULT_MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
+function isAcceptedImage(file: File) {
+  return ACCEPTED_TYPES.includes(file.type);
+}
 const FALLBACK_PROVIDERS: ProviderOption[] = [
   {
     name: "cos",
@@ -234,6 +240,7 @@ export default function App() {
   const tokenRef = useRef("");
   const pathPrefixRef = useRef("");
   const providerRef = useRef<UploadProvider>("cos");
+  const maxUploadSizeRef = useRef(DEFAULT_MAX_UPLOAD_SIZE);
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
@@ -249,6 +256,10 @@ export default function App() {
     void fetch("/api/health")
       .then((response) => response.json())
       .then((payload: HealthResponse) => {
+        if (payload.maxUploadSize && payload.maxUploadSize > 0) {
+          maxUploadSizeRef.current = payload.maxUploadSize;
+        }
+
         if (!Array.isArray(payload.providers) || !payload.providers.length) return;
 
         setProviders(payload.providers);
@@ -351,9 +362,21 @@ export default function App() {
   }
 
   async function enqueueFiles(files: File[]) {
-    const candidates = files.filter((file) => file.type.startsWith("image/"));
-    if (candidates.length < files.length) {
-      alert("检测到非图片格式文件，已自动过滤。系统仅支持 PNG, JPEG, WEBP, GIF, AVIF 图片！");
+    const maxSize = maxUploadSizeRef.current;
+    const rejected: string[] = [];
+    const candidates = files.filter((file) => {
+      if (!isAcceptedImage(file)) {
+        rejected.push(`${file.name || "未命名文件"}（格式不支持）`);
+        return false;
+      }
+      if (maxSize > 0 && file.size > maxSize) {
+        rejected.push(`${file.name || "未命名文件"}（超过 ${formatBytes(maxSize)}）`);
+        return false;
+      }
+      return true;
+    });
+    if (rejected.length) {
+      alert(`以下文件已被跳过：\n${rejected.join("\n")}\n\n仅支持 PNG, JPEG, WEBP, GIF, AVIF 图片。`);
     }
     if (!candidates.length) return;
 
@@ -374,9 +397,7 @@ export default function App() {
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
-      const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
-        file.type.startsWith("image/")
-      );
+      const files = Array.from(event.clipboardData?.files ?? []).filter(isAcceptedImage);
 
       if (!files.length) return;
       event.preventDefault();
