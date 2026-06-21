@@ -400,7 +400,7 @@ export default function App() {
 
         <div className="settings-grid">
           <label className="field-card">
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span>
               <ServerIcon /> 上传后端
             </span>
             <select value={provider} onChange={(event) => setProvider(event.target.value as UploadProvider)}>
@@ -415,7 +415,7 @@ export default function App() {
           </label>
 
           <label className="field-card">
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span>
               <LockIcon /> 上传令牌
             </span>
             <div className="field-card-input-wrapper">
@@ -438,7 +438,7 @@ export default function App() {
           </label>
 
           <label className="field-card">
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span>
               <FolderIcon /> 路径前缀
             </span>
             <input
@@ -451,7 +451,7 @@ export default function App() {
           </label>
 
           <label className="field-card">
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span>
               <InfoIcon /> CDN 域名
             </span>
             <input
