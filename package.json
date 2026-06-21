@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "packageManager": "pnpm@10.33.2",
+  "packageManager": "pnpm@11.8.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "cos-nodejs-sdk-v5": "^2.15.4",
+    "pnpm": "^11.8.0",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "zod": "4.3.6"
@@ -28,4 +29,3 @@
     }
   }
 }
-
