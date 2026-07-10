@@ -3,7 +3,7 @@ import { CheckIcon, CopyIcon, ImageIcon, InfoIcon, LockIcon } from "./icons";
 import { fetchUploadHistory, formatBytes } from "./upload";
 import type { UploadHistoryItem } from "./types";
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, label = "复制链接" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -19,7 +19,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button type="button" className={`history-copy ${copied ? "btn-success" : ""}`} onClick={() => void copy()}>
       {copied ? <CheckIcon /> : <CopyIcon />}
-      {copied ? "已复制" : "复制链接"}
+      {copied ? "已复制" : label}
     </button>
   );
 }
@@ -43,6 +43,7 @@ export default function HistoryPage({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<UploadHistoryItem | null>(null);
 
   const loadHistory = async (reset: boolean, requestedToken = token) => {
     const activeToken = requestedToken.trim();
@@ -59,6 +60,7 @@ export default function HistoryPage({
       const payload = await fetchUploadHistory(activeToken, reset ? null : nextCursor);
       setItems((current) => (reset ? payload.items : [...current, ...payload.items]));
       setNextCursor(payload.nextCursor);
+      if (reset) setSelectedItem(null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "读取上传历史失败");
     } finally {
@@ -80,6 +82,48 @@ export default function HistoryPage({
     }
     onTokenChange(draftToken);
   };
+
+  if (selectedItem) {
+    const fields = [
+      { label: "原图链接", value: selectedItem.originalUrl, copyLabel: "复制原图链接" },
+      { label: "Markdown", value: `![](${selectedItem.originalUrl})`, copyLabel: "复制 Markdown" },
+      { label: "HTML", value: `<img src=\"${selectedItem.originalUrl}\" alt=\"\" />`, copyLabel: "复制 HTML" },
+      { label: "BBCode", value: `[img]${selectedItem.originalUrl}[/img]`, copyLabel: "复制 BBCode" }
+    ];
+
+    return (
+      <main className="page-shell">
+        <button type="button" className="ghost-button detail-back-button" onClick={() => setSelectedItem(null)}>
+          返回上传历史
+        </button>
+        <section className="detail-card">
+          <div className="detail-preview">
+            <img src={selectedItem.originalUrl} alt={selectedItem.fileName} />
+          </div>
+          <div className="detail-content">
+            <span className="eyebrow">Image Details</span>
+            <h1 title={selectedItem.fileName}>{selectedItem.fileName}</h1>
+            <dl className="detail-meta">
+              <div><dt>文件类型</dt><dd>{selectedItem.contentType}</dd></div>
+              <div><dt>文件大小</dt><dd>{formatBytes(selectedItem.fileSize)}</dd></div>
+              <div><dt>上传后端</dt><dd>{selectedItem.providerLabel}</dd></div>
+              <div><dt>上传时间</dt><dd>{formatUploadedAt(selectedItem.uploadedAt)}</dd></div>
+              <div className="detail-meta-wide"><dt>对象路径</dt><dd><code>{selectedItem.objectKey}</code></dd></div>
+            </dl>
+            <div className="detail-copy-list">
+              {fields.map((field) => (
+                <div className="detail-copy-row" key={field.label}>
+                  <span>{field.label}</span>
+                  <code title={field.value}>{field.value}</code>
+                  <CopyButton text={field.value} label={field.copyLabel} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="page-shell">
@@ -137,9 +181,9 @@ export default function HistoryPage({
 
         {items.map((item) => (
           <article className="history-card" key={item.id}>
-            <a href={item.originalUrl} target="_blank" rel="noreferrer" className="history-image-link">
+            <button type="button" className="history-image-link" onClick={() => setSelectedItem(item)} aria-label={`查看 ${item.fileName} 详情`}>
               <img src={item.originalUrl} alt={item.fileName} className="history-image" loading="lazy" />
-            </a>
+            </button>
             <div className="history-card-body">
               <h2 title={item.fileName}>{item.fileName}</h2>
               <p>{item.contentType} · {formatBytes(item.fileSize)}</p>

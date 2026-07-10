@@ -367,7 +367,14 @@ button {
 
 .history-image-link {
   display: block;
+  width: 100%;
+  padding: 0;
   background: rgba(0, 0, 0, 0.03);
+  text-align: left;
+}
+
+.history-image-link:hover .history-image {
+  transform: scale(1.025);
 }
 
 .history-image {
@@ -375,6 +382,7 @@ button {
   width: 100%;
   height: 190px;
   object-fit: cover;
+  transition: transform 0.25s ease;
 }
 
 .history-card-body {
@@ -417,6 +425,116 @@ button {
   display: flex;
   justify-content: center;
   margin-top: 28px;
+}
+
+.detail-back-button {
+  margin: 0 0 20px;
+}
+
+.detail-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.04);
+}
+
+.detail-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 520px;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.035);
+}
+
+.detail-preview img {
+  display: block;
+  width: 100%;
+  max-height: 620px;
+  object-fit: contain;
+}
+
+.detail-content {
+  padding: 36px;
+}
+
+.detail-content .eyebrow {
+  margin-bottom: 12px;
+}
+
+.detail-content h1 {
+  overflow: hidden;
+  margin: 0 0 24px;
+  font-size: 28px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 24px;
+}
+
+.detail-meta > div {
+  min-width: 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.035);
+}
+
+.detail-meta dt,
+.detail-copy-row > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.detail-meta dd {
+  overflow: hidden;
+  margin: 4px 0 0;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-meta-wide {
+  grid-column: 1 / -1;
+}
+
+.detail-copy-list {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-copy-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.detail-copy-row code {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-copy-row .history-copy {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin: 0;
 }
 
 .empty-card {
@@ -764,5 +882,10 @@ button {
   .batch-actions { width: 100%; justify-content: center; }
   .history-actions { width: 100%; justify-content: center; }
   .history-save-error { align-items: flex-start; flex-direction: column; }
+  .detail-card { grid-template-columns: 1fr; }
+  .detail-preview { min-height: 300px; }
+  .detail-content { padding: 24px 20px; }
+  .detail-meta { grid-template-columns: 1fr; }
+  .detail-meta-wide { grid-column: auto; }
 }
 

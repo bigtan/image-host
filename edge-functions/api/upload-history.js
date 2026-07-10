@@ -208,13 +208,14 @@ export async function onRequestGet(context) {
     if (cursor) listOptions.cursor = cursor;
 
     const result = await getHistoryKv().list(listOptions);
-    const values = await Promise.all(result.keys.map(({ key }) => getHistoryKv().get(key, { type: "json" })));
+    const keys = Array.isArray(result?.keys) ? result.keys : [];
+    const values = await Promise.all(keys.map(({ key }) => getHistoryKv().get(key, { type: "json" })));
     const items = values.filter((value) => value && typeof value === "object");
 
     return json(
       {
         items,
-        nextCursor: result.complete ? null : result.cursor ?? null
+        nextCursor: result?.complete ? null : result?.cursor ?? null
       },
       200,
       cors.headers
