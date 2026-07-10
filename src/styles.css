@@ -54,6 +54,53 @@ button {
   padding: 60px 0 100px;
 }
 
+.page-nav {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 20px;
+}
+
+.nav-link,
+.primary-button,
+.history-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nav-link {
+  background: transparent;
+  color: var(--muted);
+}
+
+.nav-link:hover,
+.nav-link.is-active {
+  background: rgba(0, 113, 227, 0.1);
+  color: var(--accent);
+}
+
+.primary-button,
+.history-copy {
+  background: var(--accent);
+  color: white;
+}
+
+.primary-button:hover:not(:disabled),
+.history-copy:hover {
+  background: var(--accent-hover);
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .notice-banner {
   display: flex;
   align-items: center;
@@ -286,6 +333,92 @@ button {
   gap: 24px;
 }
 
+.history-actions {
+  display: flex;
+  gap: 8px;
+  margin: -12px 0 24px;
+}
+
+.history-token-field {
+  width: min(440px, 100%);
+}
+
+.history-toolbar {
+  justify-content: center;
+}
+
+.history-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.history-grid .empty-card {
+  grid-column: 1 / -1;
+}
+
+.history-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.04);
+}
+
+.history-image-link {
+  display: block;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.history-image {
+  display: block;
+  width: 100%;
+  height: 190px;
+  object-fit: cover;
+}
+
+.history-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+
+.history-card-body h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-card-body p,
+.history-card-body code {
+  overflow: hidden;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-card-body code {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.035);
+}
+
+.history-copy {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.history-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+
 .empty-card {
   border-radius: 20px;
   padding: 60px 40px;
@@ -403,6 +536,29 @@ button {
 
 .result-field button:hover {
   background: var(--accent-hover);
+}
+
+.history-saving {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.history-save-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255, 59, 48, 0.08);
+  color: #d72319;
+  font-size: 13px;
+}
+
+.history-save-error .ghost-button {
+  flex: 0 0 auto;
+  margin-left: 0;
 }
 
 .result-field button,
@@ -606,5 +762,7 @@ button {
   .settings-grid { grid-template-columns: 1fr; }
   .result-grid { grid-template-columns: 1fr; }
   .batch-actions { width: 100%; justify-content: center; }
+  .history-actions { width: 100%; justify-content: center; }
+  .history-save-error { align-items: flex-start; flex-direction: column; }
 }
 

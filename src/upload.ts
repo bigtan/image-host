@@ -1,4 +1,10 @@
-import type { SignResponse, UploadProvider, UploadResult } from "./types";
+import type {
+  SignResponse,
+  UploadHistoryItem,
+  UploadHistoryResponse,
+  UploadProvider,
+  UploadResult
+} from "./types";
 
 export function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -97,4 +103,49 @@ export function uploadToSignedUrl(
 
     xhr.send(file);
   });
+}
+
+async function readApiResponse(response: Response) {
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? "请求失败");
+  }
+
+  return payload;
+}
+
+export async function saveUploadHistory(
+  file: File,
+  result: UploadResult,
+  token: string
+) {
+  const response = await fetch("/api/upload-history", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-upload-token": token
+    },
+    body: JSON.stringify({
+      provider: result.provider,
+      objectKey: result.objectKey,
+      originalUrl: result.originalUrl,
+      fileName: file.name || "clipboard-image.png",
+      contentType: file.type,
+      fileSize: file.size
+    })
+  });
+
+  return (await readApiResponse(response)) as { item: UploadHistoryItem };
+}
+
+export async function fetchUploadHistory(token: string, cursor?: string | null) {
+  const search = new URLSearchParams({ limit: "24" });
+  if (cursor) search.set("cursor", cursor);
+
+  const response = await fetch(`/api/upload-history?${search.toString()}`, {
+    headers: { "x-upload-token": token }
+  });
+
+  return (await readApiResponse(response)) as UploadHistoryResponse;
 }

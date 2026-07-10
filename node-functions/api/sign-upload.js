@@ -324,7 +324,8 @@ export async function onRequestPost(context) {
     const contentType = validatedData.contentType;
     const fileSize = validatedData.fileSize;
     const fileName = validatedData.fileName;
-    const pathPrefix = normalizePrefix(String(validatedData.pathPrefix ?? getEnv("DEFAULT_PATH_PREFIX")));
+    const requestedPrefix = normalizePrefix(String(validatedData.pathPrefix ?? ""));
+    const pathPrefix = requestedPrefix || normalizePrefix(getEnv("DEFAULT_PATH_PREFIX", "uploads")) || "uploads";
     const catalog = getProviderCatalog();
     const provider = normalizeProviderName(validatedData.provider ?? getDefaultProvider());
 

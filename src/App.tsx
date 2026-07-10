@@ -15,10 +15,12 @@ import {
 } from "./icons";
 import {
   fileToResult,
+  saveUploadHistory,
   formatBytes,
   requestUploadSignature,
   uploadToSignedUrl
 } from "./upload";
+import HistoryPage from "./HistoryPage";
 import type {
   HealthResponse,
   ProviderOption,
@@ -95,7 +97,7 @@ function CopyButton({
 
 export default function App() {
   const [token, setToken] = useState("");
-  const [pathPrefix, setPathPrefix] = useState("");
+  const [pathPrefix, setPathPrefix] = useState("uploads");
   const [provider, setProvider] = useState<UploadProvider>("cos");
   const [providers, setProviders] = useState<ProviderOption[]>(FALLBACK_PROVIDERS);
   const [items, setItems] = useState<UploadItem[]>([]);
@@ -103,11 +105,14 @@ export default function App() {
   const [showToken, setShowToken] = useState(false);
   const [globalDragging, setGlobalDragging] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [route, setRoute] = useState<"upload" | "history">(
+    () => (window.location.hash === "#/history" ? "history" : "upload")
+  );
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previousItemsRef = useRef<UploadItem[]>([]);
   const tokenRef = useRef("");
-  const pathPrefixRef = useRef("");
+  const pathPrefixRef = useRef("uploads");
   const providerRef = useRef<UploadProvider>("cos");
   const maxUploadSizeRef = useRef(DEFAULT_MAX_UPLOAD_SIZE);
 
@@ -117,7 +122,7 @@ export default function App() {
     const storedProvider = window.localStorage.getItem(PROVIDER_STORAGE_KEY) as UploadProvider | null;
 
     if (storedToken) setToken(storedToken);
-    if (storedPrefix) setPathPrefix(storedPrefix);
+    setPathPrefix(storedPrefix?.trim() || "uploads");
     if (storedProvider === "cos" || storedProvider === "upyun") {
       setProvider(storedProvider);
     }
@@ -151,6 +156,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const handleHashChange = () => {
+      setRoute(window.location.hash === "#/history" ? "history" : "upload");
+    };
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  useEffect(() => {
     tokenRef.current = token;
 
     if (token) {
@@ -161,13 +175,10 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    pathPrefixRef.current = pathPrefix;
+    const activePrefix = pathPrefix.trim() || "uploads";
+    pathPrefixRef.current = activePrefix;
 
-    if (pathPrefix) {
-      window.localStorage.setItem(PREFIX_STORAGE_KEY, pathPrefix);
-    } else {
-      window.localStorage.removeItem(PREFIX_STORAGE_KEY);
-    }
+    window.localStorage.setItem(PREFIX_STORAGE_KEY, activePrefix);
   }, [pathPrefix]);
 
   useEffect(() => {
@@ -208,6 +219,7 @@ export default function App() {
         );
       });
 
+      const result = fileToResult(sign);
       setItems((current) =>
         current.map((item) =>
           item.id === id
@@ -215,11 +227,15 @@ export default function App() {
                 ...item,
                 status: "done",
                 progress: 100,
-                result: fileToResult(sign)
+                result,
+                historyStatus: "saving",
+                historyError: undefined
               }
             : item
         )
       );
+
+      await persistUploadHistory(id, file, result, activeToken);
     } catch (error) {
       const message = error instanceof Error ? error.message : "上传失败";
       setItems((current) =>
@@ -227,6 +243,25 @@ export default function App() {
           item.id === id ? { ...item, status: "error", error: message } : item
         )
       );
+    }
+  }
+
+  async function persistUploadHistory(id: string, file: File, result: UploadResult, activeToken: string) {
+    try {
+      await saveUploadHistory(file, result, activeToken);
+      setItems((current) =>
+        current.map((item) =>
+          item.id === id ? { ...item, historyStatus: "saved", historyError: undefined } : item
+        )
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "上传历史保存失败";
+      setItems((current) =>
+        current.map((item) =>
+          item.id === id ? { ...item, historyStatus: "error", historyError: message } : item
+        )
+      );
+      setNotice("图片已上传，但上传历史保存失败。你可以在卡片中重试保存。");
     }
   }
 
@@ -272,6 +307,8 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (route === "history") return;
+
     const handlePaste = (event: ClipboardEvent) => {
       const files = Array.from(event.clipboardData?.files ?? []).filter(isAcceptedImage);
 
@@ -282,10 +319,12 @@ export default function App() {
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, []);
+  }, [route]);
 
   // Global window-level drag-and-drop handler
   useEffect(() => {
+    if (route === "history") return;
+
     let dragCounter = 0;
 
     const handleDragEnter = (event: DragEvent) => {
@@ -328,7 +367,7 @@ export default function App() {
       window.removeEventListener("dragleave", handleDragLeave);
       window.removeEventListener("drop", handleDrop);
     };
-  }, [providers, provider]);
+  }, [providers, provider, route]);
 
   useEffect(() => {
     const previousItems = previousItemsRef.current;
@@ -385,6 +424,34 @@ export default function App() {
     });
   }
 
+  function retryHistorySave(id: string) {
+    const item = items.find((current) => current.id === id);
+    const activeToken = tokenRef.current.trim();
+    if (!item?.result || !activeToken) {
+      setNotice("请先输入上传令牌后重试保存历史记录。");
+      return;
+    }
+
+    setItems((current) =>
+      current.map((current) =>
+        current.id === id ? { ...current, historyStatus: "saving", historyError: undefined } : current
+      )
+    );
+    void persistUploadHistory(id, item.file, item.result, activeToken);
+  }
+
+  if (route === "history") {
+    return (
+      <HistoryPage
+        token={token}
+        onTokenChange={setToken}
+        onNavigateUpload={() => {
+          window.location.hash = "#/upload";
+        }}
+      />
+    );
+  }
+
   return (
     <main className="page-shell">
       {/* Full screen global drag overlay */}
@@ -405,6 +472,15 @@ export default function App() {
           </button>
         </div>
       ) : null}
+
+      <nav className="page-nav" aria-label="主导航">
+        <button type="button" className="nav-link is-active" aria-current="page">
+          上传图片
+        </button>
+        <button type="button" className="nav-link" onClick={() => { window.location.hash = "#/history"; }}>
+          上传历史
+        </button>
+      </nav>
 
       <section className="hero-card">
         <div className="hero-copy">
@@ -461,7 +537,7 @@ export default function App() {
             <input
               type="text"
               autoComplete="off"
-              placeholder="例如 forum/avatars"
+              placeholder="默认 uploads，例如 uploads/forum"
               value={pathPrefix}
               onChange={(event) => setPathPrefix(event.target.value)}
             />
@@ -621,6 +697,16 @@ export default function App() {
                       <CopyButton text={field.value} idleLabel={field.copyLabel} copiedLabel="已复制" />
                     </div>
                   ))}
+                </div>
+              ) : null}
+
+              {item.historyStatus === "saving" ? <p className="history-saving">正在保存上传历史…</p> : null}
+              {item.historyStatus === "error" ? (
+                <div className="history-save-error">
+                  <span>图片已上传，但历史未保存：{item.historyError}</span>
+                  <button type="button" className="ghost-button" onClick={() => retryHistorySave(item.id)}>
+                    重试保存
+                  </button>
                 </div>
               ) : null}
             </article>

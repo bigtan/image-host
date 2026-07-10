@@ -15,11 +15,12 @@
 
 - 拖拽上传
 - `Ctrl + V` 粘贴截图上传
-- 本地保存上传令牌和对象前缀
+- 本地保存上传令牌和对象前缀（默认 `uploads`）
 - Node Functions 校验上传令牌
 - 函数按后端签发 COS 预签名 PUT URL 或 UpYun FORM API 参数
 - 上传完成后生成原始链接、HTML、Markdown、BBCode
 - 前端切换上传后端，并显示对应 CDN 域名
+- 按当前上传令牌查看已保存的上传历史
 
 ## 本地开发
 
@@ -70,13 +71,23 @@ pnpm build
 - `DEFAULT_UPLOAD_PROVIDER`
   默认上传后端，可选 `cos` 或 `upyun`。
 - `DEFAULT_PATH_PREFIX`
-  默认对象前缀，例如 `forum`。
+  默认对象前缀，默认 `uploads`，例如 `uploads/forum`。
 - `MAX_UPLOAD_SIZE_BYTES`
 - `SIGNED_URL_EXPIRES_SECONDS`
 - `CORS_ALLOWED_ORIGINS`
   Node Function 签名接口允许访问的来源列表，使用半角逗号分隔，例如 `http://localhost:3000,https://img.example.com`。
 
 `UPLOAD_TOKEN` 和 `UPLOAD_TOKEN_SHA256` 二选一即可。
+
+## 上传历史 KV 配置
+
+上传签名继续运行在 Node Functions；上传历史 API 运行在 Edge Functions，并使用 EdgeOne KV 保存元数据。
+
+1. 在 EdgeOne 控制台创建一个 KV 命名空间。
+2. 将其绑定到当前项目，绑定变量名必须为 `IMAGE_HISTORY_KV`。
+3. 确保 Edge Function 与已有 Node Functions 一起部署；新增接口为 `/api/upload-history`，不会与现有签名接口冲突。
+
+历史记录按上传令牌的 SHA-256 指纹隔离，KV 中不保存明文令牌。EdgeOne KV 为最终一致性存储：其他边缘节点可能在最多约 60 秒后才读到刚写入的记录。
 
 ## CORS 配置
 
@@ -117,14 +128,15 @@ UpYun 使用 FORM API，前端会以 `POST` 表单直传。建议确认你的业
 推荐结构：
 
 - 静态前端：Vite 构建输出
-- 函数目录：[`node-functions/api/sign-upload.js`](./node-functions/api/sign-upload.js)
+- Node Functions：[`node-functions/api/sign-upload.js`](./node-functions/api/sign-upload.js)
+- Edge Functions：[`edge-functions/api/upload-history.js`](./edge-functions/api/upload-history.js)
 
 部署时确认：
 
 1. 构建命令使用 `pnpm build`
 2. 输出目录使用 `dist`
 3. 环境变量在 EdgeOne Pages 后台配置
-4. `node-functions` 目录一并上传
+4. `node-functions` 与 `edge-functions` 目录一并上传
 5. `CORS_ALLOWED_ORIGINS` 已包含你的正式前端域名
 
 ### GitHub Actions 自动部署
@@ -149,7 +161,8 @@ UpYun 使用 FORM API，前端会以 `POST` 表单直传。建议确认你的业
 3. Node Function 校验 `Origin` 和 `x-upload-token`
 4. 函数根据选定后端生成 COS 预签名 URL 或 UpYun FORM API 参数
 5. 浏览器直接上传到对应对象存储
-6. 前端展示嵌入代码
+6. 上传成功后，前端写入当前令牌对应的 EdgeOne KV 历史记录
+7. 前端展示嵌入代码，并可从“上传历史”查看已保存记录
 
 ## 后续建议
 

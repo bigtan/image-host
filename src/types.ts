@@ -28,6 +28,25 @@ export type UploadItem = {
   status: UploadStatus;
   error?: string;
   result?: UploadResult;
+  historyStatus?: "saving" | "saved" | "error";
+  historyError?: string;
+};
+
+export type UploadHistoryItem = {
+  id: string;
+  provider: UploadProvider;
+  providerLabel: string;
+  objectKey: string;
+  originalUrl: string;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  uploadedAt: string;
+};
+
+export type UploadHistoryResponse = {
+  items: UploadHistoryItem[];
+  nextCursor: string | null;
 };
 
 export type SignResponse = {
