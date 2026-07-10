@@ -200,11 +200,14 @@ export async function onRequestGet(context) {
   try {
     const tokenHash = await verifyUploadToken(context);
     const url = new URL(context.request.url);
-    const result = await getHistoryKv().list({
+    const cursor = cursorFrom(url);
+    const listOptions = {
       prefix: `${HISTORY_KEY_PREFIX}${tokenHash}_`,
-      limit: pageSizeFrom(url),
-      cursor: cursorFrom(url)
-    });
+      limit: pageSizeFrom(url)
+    };
+    if (cursor) listOptions.cursor = cursor;
+
+    const result = await getHistoryKv().list(listOptions);
     const values = await Promise.all(result.keys.map(({ key }) => getHistoryKv().get(key, { type: "json" })));
     const items = values.filter((value) => value && typeof value === "object");
 
