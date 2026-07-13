@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckIcon,
   CloudIcon,
-  CopyIcon,
   FolderIcon,
   ImageIcon,
   InfoIcon,
@@ -21,6 +20,7 @@ import {
   uploadToSignedUrl
 } from "./upload";
 import HistoryPage from "./HistoryPage";
+import { CopyButton, PageHeader, PageNav, UPLOAD_STATUS_LABELS } from "./ui";
 import type {
   HealthResponse,
   ProviderOption,
@@ -55,45 +55,6 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
     description: "FORM API 直传"
   }
 ];
-
-function CopyButton({
-  text,
-  idleLabel,
-  copiedLabel,
-  className = ""
-}: {
-  text: string;
-  idleLabel: string;
-  copiedLabel: string;
-  className?: string;
-}) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  useEffect(() => () => clearTimeout(timerRef.current), []);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // 剪贴板不可用时静默忽略
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      className={`${className} ${copied ? "btn-success" : ""}`.trim()}
-      onClick={() => void handleCopy()}
-    >
-      {copied ? <CheckIcon /> : <CopyIcon />}
-      {copied ? copiedLabel : idleLabel}
-    </button>
-  );
-}
 
 export default function App() {
   const [token, setToken] = useState("");
@@ -473,24 +434,9 @@ export default function App() {
         </div>
       ) : null}
 
-      <nav className="page-nav" aria-label="主导航">
-        <button type="button" className="nav-link is-active" aria-current="page">
-          上传图片
-        </button>
-        <button type="button" className="nav-link" onClick={() => { window.location.hash = "#/history"; }}>
-          上传历史
-        </button>
-      </nav>
+      <PageNav active="upload" />
 
-      <section className="hero-card">
-        <div className="hero-copy">
-          <span className="eyebrow">EdgeOne Pages + Multi Backend</span>
-          <h1>个人图床上传台</h1>
-          <p>
-            简洁、快速且安全的图片托管方案。支持直接粘贴、拖拽或点击上传。
-          </p>
-        </div>
-
+      <PageHeader eyebrow="多后端图片托管" title="个人图床上传台" description="简洁、快速且安全的图片托管方案，支持粘贴、拖拽或选择图片上传。">
         <div className="settings-grid">
           <label className="field-card">
             <span>
@@ -554,7 +500,7 @@ export default function App() {
             />
           </label>
         </div>
-      </section>
+      </PageHeader>
 
       <section
         className={`dropzone ${dragging ? "is-dragging" : ""}`}
@@ -592,9 +538,9 @@ export default function App() {
           }}
         />
         <div className="dropzone-content">
-          <CloudIcon className="cloud-icon" style={{ width: "48px", height: "48px", color: "var(--accent)", marginBottom: "12px" }} />
-          <strong>准备好上传了吗？</strong>
-          <p>拖拽图片到这里，点击浏览，或者直接从剪贴板粘贴</p>
+          <CloudIcon className="dropzone-icon" />
+          <strong>选择要上传的图片</strong>
+          <p>拖拽到此处、点击选择，或直接从剪贴板粘贴</p>
         </div>
       </section>
 
@@ -622,13 +568,13 @@ export default function App() {
               className="batch-button"
               text={doneResults.map((result) => result.markdown).join("\n")}
               idleLabel="复制全部 Markdown"
-              copiedLabel="Markdown已复制"
+              copiedLabel="Markdown 已复制"
             />
             <CopyButton
               className="batch-button"
               text={doneResults.map((result) => result.html).join("\n")}
               idleLabel="复制全部 HTML"
-              copiedLabel="HTML已复制"
+              copiedLabel="HTML 已复制"
             />
           </div>
         )}
@@ -642,9 +588,9 @@ export default function App() {
       <section className="queue-grid">
         {items.length === 0 ? (
           <article className="empty-card">
-            <ImageIcon style={{ width: "40px", height: "40px", color: "var(--muted)", marginBottom: "12px" }} />
-            <h2>暂无文件</h2>
-            <p>上传后的图片将在这里显示。</p>
+            <ImageIcon className="empty-icon" />
+            <h2>还没有上传任务</h2>
+            <p>选择图片后，上传进度和结果会显示在这里。</p>
           </article>
         ) : null}
 
@@ -677,7 +623,7 @@ export default function App() {
                     {item.file.type || "unknown"} · {formatBytes(item.file.size)}
                   </p>
                 </div>
-                <span className={`status-chip status-${item.status}`}>{item.status}</span>
+                <span className={`status-chip status-${item.status}`}>{UPLOAD_STATUS_LABELS[item.status]}</span>
               </div>
 
               <div className="progress-bar">

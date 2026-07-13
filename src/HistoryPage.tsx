@@ -1,28 +1,8 @@
 import { useEffect, useState } from "react";
-import { CheckIcon, CopyIcon, ImageIcon, InfoIcon, LockIcon } from "./icons";
+import { ImageIcon, InfoIcon, LockIcon } from "./icons";
 import { fetchUploadHistory, formatBytes } from "./upload";
 import type { UploadHistoryItem } from "./types";
-
-function CopyButton({ text, label = "复制链接" }: { text: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard access is optional for the history view.
-    }
-  };
-
-  return (
-    <button type="button" className={`history-copy ${copied ? "btn-success" : ""}`} onClick={() => void copy()}>
-      {copied ? <CheckIcon /> : <CopyIcon />}
-      {copied ? "已复制" : label}
-    </button>
-  );
-}
+import { CopyButton, PageHeader, PageNav } from "./ui";
 
 function formatUploadedAt(value: string) {
   const date = new Date(value);
@@ -93,6 +73,7 @@ export default function HistoryPage({
 
     return (
       <main className="page-shell">
+        <PageNav active="history" />
         <button type="button" className="ghost-button detail-back-button" onClick={() => setSelectedItem(null)}>
           返回上传历史
         </button>
@@ -101,7 +82,7 @@ export default function HistoryPage({
             <img src={selectedItem.originalUrl} alt={selectedItem.fileName} />
           </div>
           <div className="detail-content">
-            <span className="eyebrow">Image Details</span>
+            <span className="eyebrow">图片详情</span>
             <h1 title={selectedItem.fileName}>{selectedItem.fileName}</h1>
             <dl className="detail-meta">
               <div><dt>文件类型</dt><dd>{selectedItem.contentType}</dd></div>
@@ -115,7 +96,7 @@ export default function HistoryPage({
                 <div className="detail-copy-row" key={field.label}>
                   <span>{field.label}</span>
                   <code title={field.value}>{field.value}</code>
-                  <CopyButton text={field.value} label={field.copyLabel} />
+                  <CopyButton className="history-copy" text={field.value} idleLabel={field.copyLabel} />
                 </div>
               ))}
             </div>
@@ -127,15 +108,11 @@ export default function HistoryPage({
 
   return (
     <main className="page-shell">
-      <section className="hero-card history-hero">
-        <div className="hero-copy">
-          <span className="eyebrow">Upload History</span>
-          <h1>上传历史</h1>
-          <p>仅展示当前上传令牌保存过的图片记录。</p>
-        </div>
+      <PageNav active="history" />
+      <PageHeader eyebrow="图片管理" title="上传历史" description="查看当前上传令牌保存过的图片记录。" className="history-hero">
         <div className="history-actions">
           <button type="button" className="ghost-button" onClick={onNavigateUpload}>
-            返回上传
+            上传图片
           </button>
           <button type="button" className="primary-button" onClick={submitToken} disabled={loading}>
             {loading ? "加载中…" : "查看记录"}
@@ -153,7 +130,7 @@ export default function HistoryPage({
             onChange={(event) => setDraftToken(event.target.value)}
           />
         </label>
-      </section>
+      </PageHeader>
 
       {error ? (
         <section className="notice-banner" role="alert">
@@ -173,9 +150,9 @@ export default function HistoryPage({
       <section className="history-grid">
         {!loading && !error && items.length === 0 ? (
           <article className="empty-card">
-            <ImageIcon style={{ width: "40px", height: "40px", color: "var(--muted)", marginBottom: "12px" }} />
-            <h2>暂无上传记录</h2>
-            <p>之后上传成功的图片会显示在这里。</p>
+            <ImageIcon className="empty-icon" />
+            <h2>还没有上传记录</h2>
+            <p>使用当前令牌上传成功的图片会显示在这里。</p>
           </article>
         ) : null}
 
@@ -189,7 +166,7 @@ export default function HistoryPage({
               <p>{item.contentType} · {formatBytes(item.fileSize)}</p>
               <p>{item.providerLabel} · {formatUploadedAt(item.uploadedAt)}</p>
               <code title={item.objectKey}>{item.objectKey}</code>
-              <CopyButton text={item.originalUrl} />
+              <CopyButton className="history-copy" text={item.originalUrl} idleLabel="复制链接" />
             </div>
           </article>
         ))}
