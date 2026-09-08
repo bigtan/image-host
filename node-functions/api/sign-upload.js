@@ -1,9 +1,8 @@
 import COS from "cos-nodejs-sdk-v5";
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
   buildCosPublicUrl,
-  buildUpyunPublicUrl,
   getDefaultProvider,
   getProviderCatalog,
   normalizeProviderName
@@ -156,26 +155,6 @@ async function getSignedUploadUrl(cos, options) {
   });
 }
 
-function createUpyunPolicy(serviceName, objectKey, contentType, maxUploadSize, expiresAt, date) {
-  return Buffer.from(
-    JSON.stringify({
-      bucket: serviceName,
-      "save-key": `/${objectKey}`,
-      expiration: expiresAt,
-      date,
-      "content-type": contentType,
-      "content-length-range": `1, ${maxUploadSize}`
-    })
-  ).toString("base64");
-}
-
-function createUpyunAuthorization(operatorName, operatorPassword, serviceName, date, policy) {
-  const passwordMd5 = createHash("md5").update(operatorPassword).digest("hex");
-  const signPayload = ["POST", `/${serviceName}`, date, policy].join("&");
-  const signature = createHmac("sha1", passwordMd5).update(signPayload).digest("base64");
-  return `UPYUN ${operatorName}:${signature}`;
-}
-
 async function signCosUpload(contentType, fileSize, fileName, objectKey, uploadExpires) {
   const bucket = getEnv("COS_BUCKET");
   const region = getEnv("COS_REGION");
@@ -221,54 +200,6 @@ async function signCosUpload(contentType, fileSize, fileName, objectKey, uploadE
       headers: signedHeaders
     },
     publicUrl: buildCosPublicUrl(publicBaseUrl, bucket, region, objectKey)
-  };
-}
-
-function signUpyunUpload(contentType, maxUploadSize, objectKey, uploadExpires) {
-  const serviceName = getEnv("UPYUN_SERVICE_NAME");
-  const operatorName = getEnv("UPYUN_OPERATOR_NAME");
-  const operatorPassword = getEnv("UPYUN_OPERATOR_PASSWORD");
-  const publicBaseUrl = getEnv("UPYUN_PUBLIC_BASE_URL");
-  const apiHost = getEnv("UPYUN_API_HOST", "v0.api.upyun.com");
-
-  if (!serviceName || !operatorName || !operatorPassword) {
-    throw new Error("服务端缺少 UpYun 配置");
-  }
-
-  const date = new Date().toUTCString();
-  const expiration = Math.floor(Date.now() / 1000) + uploadExpires;
-  const policy = createUpyunPolicy(
-    serviceName,
-    objectKey,
-    contentType,
-    maxUploadSize,
-    expiration,
-    date
-  );
-  const authorization = createUpyunAuthorization(
-    operatorName,
-    operatorPassword,
-    serviceName,
-    date,
-    policy
-  );
-
-  return {
-    provider: "upyun",
-    providerLabel: "UpYun",
-    cdnBaseUrl: buildUpyunPublicUrl(publicBaseUrl, serviceName, "").replace(/\/$/, ""),
-    upload: {
-      method: "POST",
-      url: `https://${apiHost.replace(/^https?:\/\//, "").replace(/\/+$/, "")}/${serviceName}`,
-      fields: {
-        policy,
-        authorization,
-        date,
-        "content-type": contentType,
-        file: ""
-      }
-    },
-    publicUrl: buildUpyunPublicUrl(publicBaseUrl, serviceName, objectKey)
   };
 }
 
@@ -346,10 +277,7 @@ export async function onRequestPost(context) {
 
     const extension = inferExtension(contentType);
     const objectKey = createObjectKey(pathPrefix, extension);
-    const signResult =
-      provider === "upyun"
-        ? signUpyunUpload(contentType, maxUploadSize, objectKey, uploadExpires)
-        : await signCosUpload(contentType, fileSize, fileName, objectKey, uploadExpires);
+    const signResult = await signCosUpload(contentType, fileSize, fileName, objectKey, uploadExpires);
 
     return json(
       {

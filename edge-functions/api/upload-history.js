@@ -6,8 +6,7 @@ const MAX_REVERSE_TIMESTAMP = 9_999_999_999_999;
 const encoder = new TextEncoder();
 
 const PROVIDERS = {
-  cos: "Tencent COS",
-  upyun: "UpYun"
+  cos: "Tencent COS"
 };
 
 class ApiError extends Error {
