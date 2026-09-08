@@ -1,6 +1,6 @@
 # image-host
 
-基于 EdgeOne Pages Node Functions 的个人图床，支持腾讯云 COS 和 UpYun 两种上传后端。
+基于 EdgeOne Pages Node Functions 的个人图床，当前使用腾讯云 COS 上传，provider 架构支持后续扩展其他后端。
 
 ## 技术栈
 
@@ -9,7 +9,6 @@
 - TypeScript 6
 - EdgeOne Pages Node Functions
 - Tencent COS 预签名直传
-- UpYun FORM API 直传
 
 ## 已实现
 
@@ -17,9 +16,9 @@
 - `Ctrl + V` 粘贴截图上传
 - 本地保存上传令牌和对象前缀（默认 `uploads`）
 - Node Functions 校验上传令牌
-- 函数按后端签发 COS 预签名 PUT URL 或 UpYun FORM API 参数
+- 函数按 provider 签发上传参数，当前实现为 COS 预签名 PUT URL
 - 上传完成后生成原始链接、HTML、Markdown、BBCode
-- 前端切换上传后端，并显示对应 CDN 域名
+- 前端显示当前 provider 的 CDN 域名
 - 按当前上传令牌查看已保存的上传历史
 
 ## 本地开发
@@ -58,18 +57,8 @@ pnpm build
 - `COS_REGION`
 - `COS_PUBLIC_BASE_URL`
   图片公开访问域名，建议使用你绑定到 COS 的自定义域名。
-- `UPYUN_SERVICE_NAME`
-  又拍云服务名称。
-- `UPYUN_OPERATOR_NAME`
-  又拍云操作员名称。
-- `UPYUN_OPERATOR_PASSWORD`
-  又拍云操作员密码，函数会在服务端按官方规则计算签名。
-- `UPYUN_PUBLIC_BASE_URL`
-  又拍云公开访问域名，建议填写你绑定的 CDN 域名；为空时会回退到 `https://<服务名>.test.upcdn.net`。
-- `UPYUN_API_HOST`
-  又拍云上传接口域名，默认 `v0.api.upyun.com`。
 - `DEFAULT_UPLOAD_PROVIDER`
-  默认上传后端，可选 `cos` 或 `upyun`。
+  默认 provider，当前填写 `cos`。
 - `DEFAULT_PATH_PREFIX`
   默认对象前缀，默认 `uploads`，例如 `uploads/forum`。
 - `MAX_UPLOAD_SIZE_BYTES`
@@ -118,10 +107,7 @@ COS 至少允许：
 - 方法：`PUT`, `GET`, `HEAD`
 - 允许头：`Content-Type`, `Content-Length`, `Content-Disposition`
 
-UpYun 使用 FORM API，前端会以 `POST` 表单直传。建议确认你的业务域名/测试域名允许浏览器跨域上传。
-
-如果 `COS_PUBLIC_BASE_URL` 为空，前端会回显 COS 默认访问地址。  
-如果 `UPYUN_PUBLIC_BASE_URL` 为空，前端会回显 UpYun 默认测试域名。
+如果 `COS_PUBLIC_BASE_URL` 为空，前端会回显 COS 默认访问地址。
 
 ## EdgeOne Pages 部署
 
@@ -159,7 +145,7 @@ UpYun 使用 FORM API，前端会以 `POST` 表单直传。建议确认你的业
 1. 前端读取文件或粘贴截图
 2. 调用 `/api/sign-upload`
 3. Node Function 校验 `Origin` 和 `x-upload-token`
-4. 函数根据选定后端生成 COS 预签名 URL 或 UpYun FORM API 参数
+4. 函数根据选定 provider 生成对应上传参数，当前为 COS 预签名 URL
 5. 浏览器直接上传到对应对象存储
 6. 上传成功后，前端写入当前令牌对应的 EdgeOne KV 历史记录
 7. 前端展示嵌入代码，并可从“上传历史”查看已保存记录
