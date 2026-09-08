@@ -1,5 +1,5 @@
 export type UploadStatus = "queued" | "signing" | "uploading" | "done" | "error";
-export type UploadProvider = "cos" | "upyun";
+export type UploadProvider = "cos";
 
 export type ProviderOption = {
   name: UploadProvider;

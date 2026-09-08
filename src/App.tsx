@@ -46,13 +46,6 @@ const FALLBACK_PROVIDERS: ProviderOption[] = [
     configured: true,
     cdnBaseUrl: "",
     description: "预签名 PUT 直传"
-  },
-  {
-    name: "upyun",
-    label: "UpYun",
-    configured: false,
-    cdnBaseUrl: "",
-    description: "FORM API 直传"
   }
 ];
 
@@ -84,7 +77,7 @@ export default function App() {
 
     if (storedToken) setToken(storedToken);
     setPathPrefix(storedPrefix?.trim() || "uploads");
-    if (storedProvider === "cos" || storedProvider === "upyun") {
+    if (storedProvider === "cos") {
       setProvider(storedProvider);
     }
 
