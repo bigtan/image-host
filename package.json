@@ -5,11 +5,12 @@
   "type": "module",
   "packageManager": "pnpm@12.3.4",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "tsx --tsconfig tsconfig.app.json --test tests/*.test.*",
-    "check:server": "node --check node-functions/api/sign-upload.js && node --check node-functions/api/health.js && node --check node-functions/api/_lib/upload-providers.js && node --check edge-functions/api/upload-history.js"
+    "check:server": "node --check node-functions/api/sign-upload.js && node --check node-functions/api/health.js && node --check node-functions/api/_lib/upload-providers.js && node --check edge-functions/api/upload-history.js && node --check scripts/dev.mjs && node --check scripts/local-api.mjs && node --check scripts/local-kv.mjs",
+    "dev:frontend": "vite"
   },
   "dependencies": {
     "cos-nodejs-sdk-v5": "^3.0.0",
@@ -29,6 +30,6 @@
     "vite": "8.2.2"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   }
 }
