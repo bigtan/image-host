@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import HistoryThumbnail from "./HistoryThumbnail";
 import { ImageIcon, InfoIcon, LockIcon } from "./icons";
 import { fetchUploadHistory, formatBytes } from "./upload";
 import type { UploadHistoryItem } from "./types";
@@ -9,27 +10,43 @@ function formatUploadedAt(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
 }
 
-export default function HistoryPage({
-  token,
-  onTokenChange,
-  onNavigateUpload
-}: {
+type HistoryPageProps = {
   token: string;
   onTokenChange: (value: string) => void;
   onNavigateUpload: () => void;
-}) {
+};
+
+export default function HistoryPage(props: HistoryPageProps) {
+  return <HistoryContent key={props.token} {...props} />;
+}
+
+function HistoryContent({
+  token,
+  onTokenChange,
+  onNavigateUpload
+}: HistoryPageProps) {
   const [draftToken, setDraftToken] = useState(token);
   const [items, setItems] = useState<UploadHistoryItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<UploadHistoryItem | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
   const loadHistory = async (reset: boolean, requestedToken = token) => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     const activeToken = requestedToken.trim();
+    if (reset) {
+      setItems([]);
+      setNextCursor(null);
+      setSelectedItem(null);
+    }
     if (!activeToken) {
       setItems([]);
       setNextCursor(null);
+      setLoading(false);
       setError("请输入上传令牌后查看历史记录。");
       return;
     }
@@ -37,22 +54,23 @@ export default function HistoryPage({
     setLoading(true);
     setError(null);
     try {
-      const payload = await fetchUploadHistory(activeToken, reset ? null : nextCursor);
-      setItems((current) => (reset ? payload.items : [...current, ...payload.items]));
+      const payload = await fetchUploadHistory(activeToken, reset ? null : nextCursor, controller.signal);
+      if (controller.signal.aborted) return;
+      setItems(current => reset ? payload.items : [...new Map([...current, ...payload.items].map(item => [item.id, item])).values()]);
       setNextCursor(payload.nextCursor);
       if (reset) setSelectedItem(null);
     } catch (requestError) {
+      if (controller.signal.aborted) return;
       setError(requestError instanceof Error ? requestError.message : "读取上传历史失败");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
     setDraftToken(token);
     void loadHistory(true, token);
-    // The saved token changes only on initial restoration or an explicit history query.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => requestRef.current?.abort();
   }, [token]);
 
   const submitToken = () => {
@@ -159,7 +177,7 @@ export default function HistoryPage({
         {items.map((item) => (
           <article className="history-card" key={item.id}>
             <button type="button" className="history-image-link" onClick={() => setSelectedItem(item)} aria-label={`查看 ${item.fileName} 详情`}>
-              <img src={item.originalUrl} alt={item.fileName} className="history-image" loading="lazy" />
+              <HistoryThumbnail url={item.originalUrl} alt={item.fileName} />
             </button>
             <div className="history-card-body">
               <h2 title={item.fileName}>{item.fileName}</h2>
