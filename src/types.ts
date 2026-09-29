@@ -10,6 +10,8 @@ export type ProviderOption = {
 };
 
 export type UploadResult = {
+  uploadId: string;
+  uploadedAt: string;
   provider: UploadProvider;
   providerLabel: string;
   cdnBaseUrl: string;

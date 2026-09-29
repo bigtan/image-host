@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckIcon,
   CloudIcon,
@@ -20,7 +20,10 @@ import {
   uploadToSignedUrl
 } from "./upload";
 import HistoryPage from "./HistoryPage";
-import { CopyButton, PageHeader, PageNav, UPLOAD_STATUS_LABELS } from "./ui";
+import UploadCard from "./UploadCard";
+import { UploadQueue } from "./uploadQueue";
+import { requestJson } from "./request";
+import { CopyButton, PageHeader, PageNav } from "./ui";
 import type {
   HealthResponse,
   ProviderOption,
@@ -69,6 +72,9 @@ export default function App() {
   const pathPrefixRef = useRef("uploads");
   const providerRef = useRef<UploadProvider>("cos");
   const maxUploadSizeRef = useRef(DEFAULT_MAX_UPLOAD_SIZE);
+  const [uploadQueue] = useState(() => new UploadQueue(UPLOAD_CONCURRENCY));
+  const historyControllers = useRef(new Map<string, AbortController>());
+  const uploadTokens = useRef(new Map<string, string>());
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
@@ -81,8 +87,8 @@ export default function App() {
       setProvider(storedProvider);
     }
 
-    void fetch("/api/health")
-      .then((response) => response.json())
+    const controller = new AbortController();
+    void requestJson<HealthResponse>("/api/health", { signal: controller.signal })
       .then((payload: HealthResponse) => {
         if (payload.maxUploadSize && payload.maxUploadSize > 0) {
           maxUploadSizeRef.current = payload.maxUploadSize;
@@ -107,6 +113,7 @@ export default function App() {
       .catch(() => {
         // Keep the local fallback provider list when metadata is unavailable.
       });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -140,10 +147,7 @@ export default function App() {
     window.localStorage.setItem(PROVIDER_STORAGE_KEY, provider);
   }, [provider]);
 
-  async function uploadItem(id: string, file: File) {
-    const activeToken = tokenRef.current.trim();
-    const activePrefix = pathPrefixRef.current.trim();
-    const activeProvider = providerRef.current;
+  async function uploadItem(id: string, file: File, activeToken: string, activePrefix: string, activeProvider: UploadProvider, signal: AbortSignal) {
 
     if (!activeToken) {
       setItems((current) =>
@@ -159,7 +163,8 @@ export default function App() {
         current.map((item) => (item.id === id ? { ...item, status: "signing" } : item))
       );
 
-      const sign = await requestUploadSignature(file, activeToken, activePrefix, activeProvider);
+      const sign = await requestUploadSignature(file, activeToken, activePrefix, activeProvider, signal);
+      signal.throwIfAborted();
 
       setItems((current) =>
         current.map((item) =>
@@ -169,9 +174,10 @@ export default function App() {
 
       await uploadToSignedUrl(file, sign, (progress) => {
         setItems((current) =>
-          current.map((item) => (item.id === id ? { ...item, progress } : item))
+          current.map((item) => (item.id === id && item.progress !== progress ? { ...item, progress } : item))
         );
-      });
+      }, signal);
+      signal.throwIfAborted();
 
       const result = fileToResult(sign);
       setItems((current) =>
@@ -189,8 +195,9 @@ export default function App() {
         )
       );
 
-      await persistUploadHistory(id, file, result, activeToken);
+      await persistUploadHistory(id, file, result, activeToken, signal);
     } catch (error) {
+      if (signal.aborted) return;
       const message = error instanceof Error ? error.message : "上传失败";
       setItems((current) =>
         current.map((item) =>
@@ -200,15 +207,17 @@ export default function App() {
     }
   }
 
-  async function persistUploadHistory(id: string, file: File, result: UploadResult, activeToken: string) {
+  async function persistUploadHistory(id: string, file: File, result: UploadResult, activeToken: string, signal: AbortSignal) {
     try {
-      await saveUploadHistory(file, result, activeToken);
+      await saveUploadHistory(file, result, activeToken, signal);
+      signal.throwIfAborted();
       setItems((current) =>
         current.map((item) =>
           item.id === id ? { ...item, historyStatus: "saved", historyError: undefined } : item
         )
       );
     } catch (error) {
+      if (signal.aborted) return;
       const message = error instanceof Error ? error.message : "上传历史保存失败";
       setItems((current) =>
         current.map((item) =>
@@ -248,16 +257,13 @@ export default function App() {
 
     setItems((current) => [...nextItems, ...current]);
 
-    // 并发上传，最多同时处理 UPLOAD_CONCURRENCY 个，其余排队
-    const queue = [...nextItems];
-    const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, queue.length) }, async () => {
-      while (queue.length) {
-        const item = queue.shift();
-        if (!item) break;
-        await uploadItem(item.id, item.file);
-      }
-    });
-    await Promise.all(workers);
+    const activeToken = tokenRef.current.trim();
+    const activePrefix = pathPrefixRef.current.trim();
+    const activeProvider = providerRef.current;
+    for (const item of nextItems) {
+      uploadTokens.current.set(item.id, activeToken);
+      uploadQueue.add(item.id, signal => uploadItem(item.id, item.file, activeToken, activePrefix, activeProvider, signal));
+    }
   }
 
   useEffect(() => {
@@ -277,16 +283,17 @@ export default function App() {
 
   // Global window-level drag-and-drop handler
   useEffect(() => {
+    setGlobalDragging(false);
+    setDragging(false);
     if (route === "history") return;
 
     let dragCounter = 0;
 
     const handleDragEnter = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes("Files")) return;
       event.preventDefault();
       dragCounter++;
-      if (event.dataTransfer?.types.includes("Files")) {
-        setGlobalDragging(true);
-      }
+      setGlobalDragging(true);
     };
 
     const handleDragOver = (event: DragEvent) => {
@@ -295,7 +302,7 @@ export default function App() {
 
     const handleDragLeave = (event: DragEvent) => {
       event.preventDefault();
-      dragCounter--;
+      dragCounter = Math.max(0, dragCounter - 1);
       if (dragCounter === 0) {
         setGlobalDragging(false);
       }
@@ -304,6 +311,7 @@ export default function App() {
     const handleDrop = (event: DragEvent) => {
       event.preventDefault();
       setGlobalDragging(false);
+      setDragging(false);
       dragCounter = 0;
       if (event.dataTransfer?.files) {
         handleFileSelection(event.dataTransfer.files);
@@ -321,7 +329,7 @@ export default function App() {
       window.removeEventListener("dragleave", handleDragLeave);
       window.removeEventListener("drop", handleDrop);
     };
-  }, [providers, provider, route]);
+  }, [route]);
 
   useEffect(() => {
     const previousItems = previousItemsRef.current;
@@ -329,13 +337,18 @@ export default function App() {
 
     previousItems
       .filter((item) => !activeIds.has(item.id))
-      .forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      .forEach((item) => {
+        URL.revokeObjectURL(item.previewUrl);
+        uploadTokens.current.delete(item.id);
+      });
 
     previousItemsRef.current = items;
   }, [items]);
 
   useEffect(() => {
     return () => {
+      uploadQueue.cancelAll();
+      historyControllers.current.forEach(controller => controller.abort());
       previousItemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
     };
   }, []);
@@ -365,22 +378,20 @@ export default function App() {
   }
 
   function clearFinished() {
-    setItems((current) => current.filter((item) => item.status !== "done"));
+    setItems(current => current.filter(item => item.status !== "done" || item.historyStatus !== "saved"));
   }
 
-  function removeCard(id: string) {
-    setItems((current) => {
-      const itemToRemove = current.find((item) => item.id === id);
-      if (itemToRemove) {
-        URL.revokeObjectURL(itemToRemove.previewUrl);
-      }
-      return current.filter((item) => item.id !== id);
-    });
-  }
+  const removeCard = useCallback((id: string) => {
+    uploadQueue.cancel(id);
+    historyControllers.current.get(id)?.abort();
+    historyControllers.current.delete(id);
+    setItems(current => current.filter(item => item.id !== id));
+  }, [uploadQueue]);
 
-  function retryHistorySave(id: string) {
-    const item = items.find((current) => current.id === id);
-    const activeToken = tokenRef.current.trim();
+  const retryHistorySave = useCallback((item: UploadItem) => {
+    const id = item.id;
+    const activeToken = uploadTokens.current.get(id) ?? "";
+    if (historyControllers.current.has(id)) return;
     if (!item?.result || !activeToken) {
       setNotice("请先输入上传令牌后重试保存历史记录。");
       return;
@@ -391,8 +402,11 @@ export default function App() {
         current.id === id ? { ...current, historyStatus: "saving", historyError: undefined } : current
       )
     );
-    void persistUploadHistory(id, item.file, item.result, activeToken);
-  }
+    const controller = new AbortController();
+    historyControllers.current.set(id, controller);
+    void persistUploadHistory(id, item.file, item.result, activeToken, controller.signal)
+      .finally(() => historyControllers.current.delete(id));
+  }, []);
 
   if (route === "history") {
     return (
@@ -507,9 +521,8 @@ export default function App() {
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => {
           event.preventDefault();
-          event.stopPropagation();
+          // The window handler owns enqueueing and resetting both drag indicators.
           setDragging(false);
-          handleFileSelection(event.dataTransfer.files);
         }}
         onClick={() => fileInputRef.current?.click()}
         onKeyDown={(event) => {
@@ -574,7 +587,7 @@ export default function App() {
 
         <button type="button" className="ghost-button" onClick={clearFinished}>
           <TrashIcon />
-          清空已完成
+          清空已保存
         </button>
       </section>
 
@@ -587,70 +600,9 @@ export default function App() {
           </article>
         ) : null}
 
-        {items.map((item) => {
-          const result = item.result;
-          const resultFields = result
-            ? [
-                { label: "原图链接", value: result.originalUrl, copyLabel: "复制链接" },
-                { label: "Markdown", value: result.markdown, copyLabel: "复制 Markdown" },
-                { label: "HTML", value: result.html, copyLabel: "复制 HTML" },
-                { label: "BBCode", value: result.bbcode, copyLabel: "复制 BBCode" }
-              ]
-            : [];
-
-          return (
-            <article key={item.id} className="upload-card">
-              <button 
-                type="button" 
-                className="card-remove-btn" 
-                onClick={() => removeCard(item.id)}
-                title="移除此卡片"
-              >
-                <XIcon />
-              </button>
-
-              <div className="upload-meta">
-                <div>
-                  <h3>{item.file.name || "clipboard-image.png"}</h3>
-                  <p>
-                    {item.file.type || "unknown"} · {formatBytes(item.file.size)}
-                  </p>
-                </div>
-                <span className={`status-chip status-${item.status}`}>{UPLOAD_STATUS_LABELS[item.status]}</span>
-              </div>
-
-              <div className="progress-bar">
-                <div style={{ width: `${item.progress}%` }} />
-              </div>
-
-              {item.error ? <p className="error-text">{item.error}</p> : null}
-
-              <img src={item.previewUrl} alt={item.file.name} className="preview-image" />
-
-              {result ? (
-                <div className="result-grid">
-                  {resultFields.map((field) => (
-                    <div className="result-field" key={field.label}>
-                      <span>{field.label}</span>
-                      <textarea readOnly value={field.value} />
-                      <CopyButton text={field.value} idleLabel={field.copyLabel} copiedLabel="已复制" />
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {item.historyStatus === "saving" ? <p className="history-saving">正在保存上传历史…</p> : null}
-              {item.historyStatus === "error" ? (
-                <div className="history-save-error">
-                  <span>图片已上传，但历史未保存：{item.historyError}</span>
-                  <button type="button" className="ghost-button" onClick={() => retryHistorySave(item.id)}>
-                    重试保存
-                  </button>
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
+        {items.map(item => (
+          <UploadCard key={item.id} item={item} onRemove={removeCard} onRetryHistory={retryHistorySave} />
+        ))}
       </section>
     </main>
   );

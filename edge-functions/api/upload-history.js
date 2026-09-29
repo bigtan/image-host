@@ -144,10 +144,23 @@ function parseUploadRecord(value) {
   };
 }
 
-function createHistoryKey(tokenHash) {
-  const reverseTimestamp = String(MAX_REVERSE_TIMESTAMP - Date.now()).padStart(13, "0");
-  const randomId = crypto.randomUUID().replaceAll("-", "");
-  return `${HISTORY_KEY_PREFIX}${tokenHash}_${reverseTimestamp}_${randomId}`;
+function parseUploadIdentity(value) {
+  const uploadId = readString(value.uploadId, "uploadId", 36);
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(uploadId)) {
+    throw new ApiError("uploadId 无效", 400);
+  }
+  const uploadedAt = readString(value.uploadedAt, "uploadedAt", 24);
+  const timestamp = Date.parse(uploadedAt);
+  if (!Number.isFinite(timestamp) || timestamp < 0 || timestamp > Date.now() + 300_000 ||
+      new Date(timestamp).toISOString() !== uploadedAt) {
+    throw new ApiError("uploadedAt 无效", 400);
+  }
+  return { id: uploadId.toLowerCase(), uploadedAt };
+}
+
+function createHistoryKey(tokenHash, item) {
+  const reverseTimestamp = String(MAX_REVERSE_TIMESTAMP - Date.parse(item.uploadedAt)).padStart(13, "0");
+  return `${HISTORY_KEY_PREFIX}${tokenHash}_${reverseTimestamp}_${item.id.replaceAll("-", "")}`;
 }
 
 function pageSizeFrom(url) {
@@ -180,10 +193,10 @@ export async function onRequestPost(context) {
     const tokenHash = await verifyUploadToken(context);
     const body = await context.request.json().catch(() => null);
     const input = parseUploadRecord(body);
-    const uploadedAt = new Date().toISOString();
-    const item = { id: crypto.randomUUID(), ...input, uploadedAt };
+    const item = { ...input, ...parseUploadIdentity(body) };
 
-    await getHistoryKv().put(createHistoryKey(tokenHash), JSON.stringify(item));
+    // Stable keys make retries safe even when KV reads are eventually consistent.
+    await getHistoryKv().put(createHistoryKey(tokenHash, item), JSON.stringify(item));
     return json({ item }, 201, cors.headers);
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 500;
