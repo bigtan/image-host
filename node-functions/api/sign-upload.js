@@ -32,7 +32,7 @@ function sha256(value) {
 }
 
 function safeCompare(a, b) {
-  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) {
+  if (typeof a !== "string" || typeof b !== "string" || Buffer.byteLength(a) !== Buffer.byteLength(b)) {
     return false;
   }
 
@@ -122,15 +122,15 @@ function getCorsHeaders(request) {
 
 function verifyUploadToken(token) {
   const rawToken = getEnv("UPLOAD_TOKEN");
-  const hashedToken = getEnv("UPLOAD_TOKEN_SHA256");
+  const hashedToken = getEnv("UPLOAD_TOKEN_SHA256").toLowerCase();
 
   if (!rawToken && !hashedToken) {
     throw new Error("服务端缺少上传令牌配置");
   }
 
   if (!token) return false;
-  if (rawToken && safeCompare(token, rawToken)) return true;
-  if (hashedToken && safeCompare(sha256(token), hashedToken)) return true;
+  if (rawToken && safeCompare(sha256(token), sha256(rawToken))) return true;
+  if (/^[a-f0-9]{64}$/.test(hashedToken) && safeCompare(sha256(token), hashedToken)) return true;
   return false;
 }
 
